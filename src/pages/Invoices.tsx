@@ -311,12 +311,31 @@ export const Invoices: React.FC = () => {
       if (!response.ok) {
         const err = await response.json();
         console.error("Email failed:", err);
+        
+        // Show alert for better debugging
+        setAlertModal({
+          isOpen: true,
+          title: 'Gagal Mengirim Email',
+          message: `Server mengembalikan error: ${err.message || err.error || 'Unknown error'}. Pastikan RESEND_API_KEY sudah benar di Vercel.`,
+          type: 'error'
+        });
+
         // Fallback to mailto if server fails or key is missing
         const subject = `[OFFICIAL] ${docType} #${invoice.id.slice(0, 8).toUpperCase()} - ${storeName}`;
         const body = `Halo ${client.name},\n\nTerima kasih telah menggunakan layanan ${storeName}.\n\nBerikut adalah ${docType} resmi Anda yang dapat diakses, diunduh, dan dicetak melalui tautan digital di bawah ini:\n\nLihat Dokumen Digital: ${publicUrl}\n\nJika ada pertanyaan, silakan hubungi kami.\n\nHormat kami,\nTim ${storeName}`;
-        window.location.href = `mailto:${client.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+        
+        // Delay mailto slightly so user can see the alert
+        setTimeout(() => {
+          window.location.href = `mailto:${client.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+        }, 2000);
       } else {
         console.log("Email sent successfully via server");
+        setAlertModal({
+          isOpen: true,
+          title: 'Email Terkirim',
+          message: `Invoice berhasil dikirim ke ${client.email} melalui server.`,
+          type: 'success'
+        });
       }
     } catch (error) {
       console.error("Email API error:", error);

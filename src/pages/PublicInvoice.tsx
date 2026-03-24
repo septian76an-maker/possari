@@ -60,9 +60,9 @@ export const PublicInvoice: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-app-bg py-12 px-6">
+    <div className="min-h-screen bg-app-bg py-6 md:py-12 px-4 md:px-6">
       <InvoiceView invoice={invoice} client={client || undefined} isPublic={true} />
-      <div className="max-w-4xl mx-auto mt-8 text-center">
+      <div className="max-w-4xl mx-auto mt-8 text-center pb-8">
         <p className="text-xs text-app-text-muted uppercase tracking-widest font-bold">
           Diterbitkan oleh JasaPro
         </p>

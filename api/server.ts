@@ -94,10 +94,13 @@ app.use(express.json());
 // Re-implement the API route for Vercel serverless function
 app.post("/api/send-invoice-email", async (req, res) => {
   const { email, clientName, invoiceType, invoiceId, publicUrl, appName } = req.body;
+  console.log(`Attempting to send email to: ${email} for invoice: ${invoiceId}`);
+  
   try {
     const resend = getResendClient();
     const storeName = appName || 'JasaPro';
     const docType = invoiceType === 'invoice' ? 'Invoice' : 'Penawaran';
+    
     const { data, error } = await resend.emails.send({
       from: `${storeName} <onboarding@resend.dev>`,
       to: [email],
@@ -116,9 +119,20 @@ app.post("/api/send-invoice-email", async (req, res) => {
         </div>
       `,
     });
-    if (error) return res.status(400).json({ error });
+
+    if (error) {
+      console.error("Resend API Error:", JSON.stringify(error, null, 2));
+      return res.status(400).json({ 
+        error: "Resend API Error", 
+        details: error,
+        message: error.message 
+      });
+    }
+
+    console.log("Email sent successfully via Resend:", data?.id);
     res.json({ success: true, data });
   } catch (err) {
+    console.error("Unexpected Server Error:", err);
     const errorMessage = err instanceof Error ? err.message : "Internal server error";
     res.status(500).json({ error: errorMessage });
   }
