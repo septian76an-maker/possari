@@ -1,5 +1,4 @@
 import express from "express";
-import { createServer as createViteServer } from "vite";
 import path from "path";
 import { Resend } from 'resend';
 import dotenv from 'dotenv';
@@ -67,8 +66,9 @@ async function startServer() {
     }
   });
 
-  // Vite middleware for development
+  // Vite middleware for development (Dynamic Import to prevent Vercel errors)
   if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
