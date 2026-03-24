@@ -111,7 +111,8 @@ service cloud.firestore {
     }
 
     match /clients/{clientId} {
-      allow read: if isCashier();
+      allow get: if true;
+      allow list: if isCashier();
       allow create, update: if isCashier() && isValidClient(request.resource.data);
       allow delete: if isAdmin();
     }

@@ -30,7 +30,7 @@ export const PublicInvoice: React.FC = () => {
         }
       } catch (err) {
         setError('Gagal memuat invoice.');
-        console.error(err);
+        handleFirestoreError(err, OperationType.GET, `invoices/${id}`);
       } finally {
         setLoading(false);
       }
