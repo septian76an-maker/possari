@@ -87,4 +87,45 @@ async function startServer() {
   });
 }
 
-startServer();
+// Export for Vercel
+const app = express();
+app.use(express.json());
+
+// Re-implement the API route for Vercel serverless function
+app.post("/api/send-invoice-email", async (req, res) => {
+  const { email, clientName, invoiceType, invoiceId, publicUrl, appName } = req.body;
+  try {
+    const resend = getResendClient();
+    const storeName = appName || 'JasaPro';
+    const docType = invoiceType === 'invoice' ? 'Invoice' : 'Penawaran';
+    const { data, error } = await resend.emails.send({
+      from: `${storeName} <onboarding@resend.dev>`,
+      to: [email],
+      subject: `[OFFICIAL] ${docType} #${invoiceId.slice(0, 8).toUpperCase()} - ${storeName}`,
+      html: `
+        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
+          <p style="color: #171717; font-size: 16px;">Halo ${clientName},</p>
+          <p style="color: #404040; line-height: 1.6;">Terima kasih telah menggunakan layanan <strong>${storeName}</strong>.</p>
+          <p style="color: #404040; line-height: 1.6;">Berikut adalah ${docType} resmi Anda yang dapat diakses, diunduh, dan dicetak melalui tautan digital di bawah ini:</p>
+          <div style="margin: 30px 0; text-align: center;">
+            <a href="${publicUrl}" style="background-color: #171717; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">Lihat Dokumen Digital</a>
+          </div>
+          <p style="color: #737373; font-size: 14px;">Jika ada pertanyaan, silakan hubungi kami.</p>
+          <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
+          <p style="color: #a3a3a3; font-size: 12px;">Hormat kami,<br>Tim ${storeName}</p>
+        </div>
+      `,
+    });
+    if (error) return res.status(400).json({ error });
+    res.json({ success: true, data });
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : "Internal server error";
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+if (process.env.NODE_ENV !== "production") {
+  startServer();
+}
+
+export default app;
