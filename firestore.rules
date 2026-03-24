@@ -1,0 +1,155 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Fields: uid, email, role, name
+    //
+    // Collection: clients
+    // Fields: name, email, phone, address
+    //
+    // Collection: services
+    // Fields: name, price, description
+    //
+    // Collection: invoices
+    // Fields: clientId, clientName, items, total, status, type, createdAt, createdBy, creatorName, voucherCode, discountAmount
+    //
+    // Collection: vouchers
+    // Fields: name, code, discountType, discountValue, minPurchase, maxDiscount, startDate, expiryDate, isActive, usageCount, createdAt
+    //
+    // Collection: voucher_logs
+    // Fields: voucherName, voucherCode, usedAt, cashierName, invoiceCode, status, errorMessage
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && (
+        request.auth.token.email == "septian76an@gmail.com" ||
+        request.auth.token.email == "septian@pos.com" ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+      );
+    }
+
+    function isCashier() {
+      return isAuthenticated() && (
+        isAdmin() || 
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'cashier')
+      );
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'email', 'role']) &&
+             data.uid is string &&
+             data.email is string &&
+             data.role in ['admin', 'cashier'] &&
+             (!('name' in data) || data.name is string);
+    }
+
+    function isValidClient(data) {
+      return data.keys().hasAll(['name']) &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100;
+    }
+
+    function isValidService(data) {
+      return data.keys().hasAll(['name', 'price']) &&
+             data.name is string && data.name.size() > 0 &&
+             data.price is number && data.price >= 0;
+    }
+
+    function isValidInvoice(data) {
+      return data.keys().hasAll(['clientId', 'items', 'total', 'status', 'type', 'createdAt']) &&
+             data.clientId is string &&
+             data.items is list &&
+             data.total is number &&
+             data.status in ['pending', 'paid', 'cancelled'] &&
+             data.type in ['invoice', 'quotation'];
+    }
+
+    function isValidVoucher(data) {
+      return data.keys().hasAll(['name', 'code', 'discountType', 'discountValue', 'isActive', 'createdAt']) &&
+             data.name is string && data.name.size() > 0 &&
+             data.code is string && data.code.size() > 0 &&
+             data.discountType in ['percentage', 'fixed'] &&
+             data.discountValue is number && data.discountValue >= 0 &&
+             data.isActive is bool;
+    }
+
+    function isValidVoucherLog(data) {
+      return data.keys().hasAll(['voucherName', 'voucherCode', 'usedAt', 'cashierName', 'invoiceCode', 'status']) &&
+             data.voucherName is string &&
+             data.voucherCode is string &&
+             data.cashierName is string &&
+             data.invoiceCode is string &&
+             data.status in ['success', 'failed'];
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if true;
+      allow create: if isAuthenticated() && (
+        (request.auth.uid == userId) || isAdmin()
+      ) && isValidUser(request.resource.data);
+      allow update: if isAdmin() && isValidUser(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /clients/{clientId} {
+      allow read: if isCashier();
+      allow create, update: if isCashier() && isValidClient(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /services/{serviceId} {
+      allow read: if isCashier();
+      allow create, update: if isAdmin() && isValidService(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /invoices/{invoiceId} {
+      // Public read for specific invoice (for public invoice feature)
+      allow get: if true; 
+      allow list: if isAuthenticated();
+      allow create, update: if isAuthenticated();
+      allow delete: if isAdmin();
+    }
+
+    match /vouchers/{voucherId} {
+      allow read: if isAuthenticated();
+      allow create: if isAdmin();
+      allow update: if isAuthenticated();
+      allow delete: if isAdmin();
+    }
+
+    match /voucher_logs/{logId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if isAdmin();
+    }
+
+    match /settings/global {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /test/connection {
+      allow read: if true;
+    }
+  }
+}

@@ -1,0 +1,152 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile with role-based access control.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "role": { "type": "string", "enum": ["admin", "cashier"] },
+        "name": { "type": "string" }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "Client": {
+      "title": "Client",
+      "description": "Customer information for invoicing.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "phone": { "type": "string" },
+        "address": { "type": "string" }
+      },
+      "required": ["name"]
+    },
+    "Service": {
+      "title": "Service",
+      "description": "Service or product offered by the business.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "price": { "type": "number" },
+        "description": { "type": "string" }
+      },
+      "required": ["name", "price"]
+    },
+    "Invoice": {
+      "title": "Invoice",
+      "description": "Invoice or quotation document.",
+      "type": "object",
+      "properties": {
+        "clientId": { "type": "string" },
+        "clientName": { "type": "string" },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "serviceId": { "type": "string" },
+              "name": { "type": "string" },
+              "price": { "type": "number" },
+              "qty": { "type": "number" }
+            }
+          }
+        },
+        "total": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "paid", "cancelled"] },
+        "type": { "type": "string", "enum": ["invoice", "quotation"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "createdBy": { "type": "string" },
+        "creatorName": { "type": "string" },
+        "voucherCode": { "type": "string" },
+        "discountAmount": { "type": "number" }
+      },
+      "required": ["clientId", "items", "total", "status", "type", "createdAt"]
+    },
+    "Voucher": {
+      "title": "Voucher",
+      "description": "Discount voucher or promo code.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "code": { "type": "string" },
+        "discountType": { "type": "string", "enum": ["percentage", "fixed"] },
+        "discountValue": { "type": "number" },
+        "minPurchase": { "type": "number" },
+        "maxDiscount": { "type": "number" },
+        "startDate": { "type": "string", "format": "date-time" },
+        "expiryDate": { "type": "string", "format": "date-time" },
+        "isActive": { "type": "boolean" },
+        "usageCount": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "code", "discountType", "discountValue", "isActive", "createdAt"]
+    },
+    "VoucherLog": {
+      "title": "Voucher Log",
+      "description": "Log of voucher usage.",
+      "type": "object",
+      "properties": {
+        "voucherName": { "type": "string" },
+        "voucherCode": { "type": "string" },
+        "usedAt": { "type": "string", "format": "date-time" },
+        "cashierName": { "type": "string" },
+        "invoiceCode": { "type": "string" },
+        "status": { "type": "string", "enum": ["success", "failed"] },
+        "errorMessage": { "type": "string" }
+      },
+      "required": ["voucherName", "voucherCode", "usedAt", "cashierName", "invoiceCode", "status"]
+    },
+    "Settings": {
+      "title": "Settings",
+      "description": "Global application settings.",
+      "type": "object",
+      "properties": {
+        "appName": { "type": "string" },
+        "appLogo": { "type": "string" },
+        "appAddress": { "type": "string" },
+        "appPhone": { "type": "string" },
+        "appEmail": { "type": "string" },
+        "bankAccounts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "bankName": { "type": "string" },
+              "accountNumber": { "type": "string" },
+              "accountHolder": { "type": "string" }
+            }
+          }
+        }
+      }
+    }
+  },
+  "firestore": {
+    "/users/{uid}": {
+      "schema": "User",
+      "description": "User profiles."
+    },
+    "/clients/{clientId}": {
+      "schema": "Client",
+      "description": "Client database."
+    },
+    "/services/{serviceId}": {
+      "schema": "Service",
+      "description": "Service catalog."
+    },
+    "/invoices/{invoiceId}": {
+      "schema": "Invoice",
+      "description": "Invoices and quotations."
+    },
+    "/vouchers/{voucherId}": {
+      "schema": "Voucher",
+      "description": "Discount vouchers."
+    },
+    "/settings/global": {
+      "schema": "Settings",
+      "description": "Global app configuration."
+    }
+  }
+}

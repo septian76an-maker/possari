@@ -1,0 +1,5 @@
+{
+  "name": "JasaPro - Sistem Penjualan Jasa",
+  "description": "Aplikasi manajemen penjualan jasa, klien, produk, invoice, dan penawaran dengan akses Admin/Kasir.",
+  "requestFramePermissions": []
+}

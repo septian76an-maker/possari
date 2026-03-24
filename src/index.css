@@ -1,0 +1,58 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
+  --color-app-bg: var(--color-bg);
+  --color-app-card: var(--color-card);
+  --color-app-border: var(--color-border);
+  --color-app-text: var(--color-text);
+  --color-app-text-muted: var(--color-text-muted);
+  --color-app-primary: var(--color-primary);
+}
+
+@layer base {
+  :root {
+    --color-primary: #171717; /* neutral-900 */
+    --color-bg: #fafafa; /* neutral-50 */
+    --color-card: #ffffff;
+    --color-border: #e5e5e5; /* neutral-200 */
+    --color-text: #171717;
+    --color-text-muted: #737373; /* neutral-500 */
+  }
+
+  [data-theme='dark'] {
+    --color-primary: #f8fafc; /* slate-50 */
+    --color-bg: #0f172a; /* slate-900 */
+    --color-card: #1e293b; /* slate-800 */
+    --color-border: #334155; /* slate-700 */
+    --color-text: #f8fafc;
+    --color-text-muted: #94a3b8; /* slate-400 */
+  }
+
+  [data-theme='ocean'] {
+    --color-primary: #1e40af; /* blue-800 */
+    --color-bg: #eff6ff; /* blue-50 */
+    --color-card: #ffffff;
+    --color-border: #bfdbfe; /* blue-200 */
+    --color-text: #1e3a8a; /* blue-900 */
+    --color-text-muted: #60a5fa; /* blue-400 */
+  }
+
+  body {
+    @apply font-sans antialiased;
+    background-color: var(--color-bg);
+    color: var(--color-text);
+  }
+}
+
+@layer utilities {
+  .print-hide {
+    @media print {
+      display: none;
+    }
+  }
+}
+
