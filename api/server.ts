@@ -35,7 +35,7 @@ async function startServer() {
       const docType = invoiceType === 'invoice' ? 'Invoice' : 'Penawaran';
 
       const { data, error } = await resend.emails.send({
-        from: `${storeName} <onboarding@resend.dev>`, // Default Resend test domain
+        from: process.env.RESEND_FROM_EMAIL || `${storeName} <onboarding@resend.dev>`,
         to: [email],
         subject: `[OFFICIAL] ${docType} #${invoiceId.slice(0, 8).toUpperCase()} - ${storeName}`,
         html: `
@@ -102,7 +102,7 @@ app.post("/api/send-invoice-email", async (req, res) => {
     const docType = invoiceType === 'invoice' ? 'Invoice' : 'Penawaran';
     
     const { data, error } = await resend.emails.send({
-      from: `${storeName} <onboarding@resend.dev>`,
+      from: process.env.RESEND_FROM_EMAIL || `${storeName} <onboarding@resend.dev>`,
       to: [email],
       subject: `[OFFICIAL] ${docType} #${invoiceId.slice(0, 8).toUpperCase()} - ${storeName}`,
       html: `
