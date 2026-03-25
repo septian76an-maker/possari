@@ -55,6 +55,13 @@ class ErrorBoundary extends Component<EBProps, EBState> {
 
 const PrivateRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, loading } = useAuth();
+  const { settings } = useSettings();
+
+  useEffect(() => {
+    if (settings.appName) {
+      document.title = settings.appName;
+    }
+  }, [settings.appName]);
 
   if (loading) {
     return (

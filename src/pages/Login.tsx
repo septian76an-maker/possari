@@ -95,7 +95,7 @@ export const Login: React.FC = () => {
               <input
                 required
                 type="text"
-                placeholder="ari"
+                placeholder=""
                 className="w-full pl-12 pr-4 py-3 bg-app-bg border-none rounded-xl focus:ring-2 focus:ring-app-primary transition-all text-app-text"
                 value={identifier}
                 onChange={(e) => setIdentifier(e.target.value)}

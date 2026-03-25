@@ -9,11 +9,11 @@ interface SettingsContextType {
 }
 
 const defaultSettings: AppSettings = {
-  appName: 'JasaPro',
+  appName: 'Sistem Invoice',
   appLogo: '',
-  appAddress: 'Jl. Contoh No. 123, Jakarta',
-  appPhone: '0812-3456-7890',
-  appEmail: 'info@jasapro.com',
+  appAddress: 'Alamat Bisnis Anda',
+  appPhone: '0812-xxxx-xxxx',
+  appEmail: 'admin@bisnisanda.com',
   bankAccounts: [],
   theme: 'default'
 };

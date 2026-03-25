@@ -4,9 +4,11 @@ import { db, doc, getDoc, handleFirestoreError, OperationType } from '../firebas
 import { Invoice, Client } from '../types';
 import { InvoiceView } from '../components/InvoiceView';
 import { Loader2, AlertCircle } from 'lucide-react';
+import { useSettings } from '../SettingsContext';
 
 export const PublicInvoice: React.FC = () => {
   const { id } = useParams<{ id: string }>();
+  const { settings } = useSettings();
   const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [client, setClient] = useState<Client | null>(null);
   const [loading, setLoading] = useState(true);
@@ -64,7 +66,7 @@ export const PublicInvoice: React.FC = () => {
       <InvoiceView invoice={invoice} client={client || undefined} isPublic={true} />
       <div className="max-w-4xl mx-auto mt-8 text-center pb-8">
         <p className="text-xs text-app-text-muted uppercase tracking-widest font-bold">
-          Diterbitkan oleh JasaPro
+          Diterbitkan oleh {settings.appName || 'Sistem Invoice'}
         </p>
       </div>
     </div>

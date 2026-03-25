@@ -75,8 +75,8 @@ export const Dashboard: React.FC = () => {
         })}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
-        <div className="lg:col-span-2 space-y-6">
+      <div className="grid grid-cols-1 gap-10">
+        <div className="space-y-6">
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-black text-app-text tracking-tight">Transaksi Terakhir</h2>
             <button className="text-sm font-bold text-app-text-muted hover:text-app-text uppercase tracking-widest">Lihat Semua</button>
@@ -107,23 +107,6 @@ export const Dashboard: React.FC = () => {
                 <div className="p-12 text-center text-app-text-muted">Belum ada transaksi.</div>
               )}
             </div>
-          </div>
-        </div>
-
-        <div className="space-y-6">
-          <h2 className="text-xl font-black text-app-text tracking-tight">Status Bisnis</h2>
-          <div className="bg-app-primary text-white rounded-2xl p-8 relative overflow-hidden">
-            <div className="relative z-10">
-              <p className="text-white/60 text-xs font-bold uppercase tracking-widest mb-2">Target Bulanan</p>
-              <h3 className="text-3xl font-black mb-6">75% Tercapai</h3>
-              <div className="w-full bg-white/10 h-2 rounded-full mb-8">
-                <div className="bg-emerald-400 h-full rounded-full w-3/4 shadow-[0_0_15px_rgba(52,211,153,0.5)]"></div>
-              </div>
-              <p className="text-sm text-white/70 leading-relaxed">
-                Pertahankan performa Anda! Pendapatan bulan ini meningkat 12% dibanding bulan lalu.
-              </p>
-            </div>
-            <div className="absolute -right-12 -bottom-12 w-48 h-48 bg-white/5 rounded-full blur-3xl"></div>
           </div>
         </div>
       </div>
