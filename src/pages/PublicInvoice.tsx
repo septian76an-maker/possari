@@ -15,6 +15,12 @@ export const PublicInvoice: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (settings.appName) {
+      document.title = settings.appName;
+    }
+  }, [settings.appName]);
+
+  useEffect(() => {
     const fetchInvoice = async () => {
       if (!id) return;
       try {
