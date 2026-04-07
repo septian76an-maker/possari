@@ -14,7 +14,7 @@ interface InvoiceViewProps {
 
 export const InvoiceView: React.FC<InvoiceViewProps> = ({ invoice, client, isPublic = false }) => {
   const { settings } = useSettings();
-  const publicUrl = `${window.location.origin}/public/invoice/${invoice.id}`;
+  const publicUrl = `${window.location.origin}/#/public/invoice/${invoice.id}`;
 
   return (
     <div className="bg-white p-4 sm:p-8 max-w-4xl mx-auto border border-neutral-200 shadow-sm print:shadow-none print:border-none rounded-xl sm:rounded-none">

@@ -309,7 +309,7 @@ export const Invoices: React.FC = () => {
     const client = clients.find(c => c.id === invoice.clientId);
     if (!client?.phone) return alert('Nomor telepon klien tidak tersedia.');
     
-    const publicUrl = `${window.location.origin}/public/invoice/${invoice.id}`;
+    const publicUrl = `${window.location.origin}/#/public/invoice/${invoice.id}`;
     const message = `Halo ${client.name}, berikut adalah ${invoice.type === 'invoice' ? 'invoice' : 'penawaran'} Anda: ${publicUrl}`;
     window.open(`https://wa.me/${client.phone.replace(/\D/g, '')}?text=${encodeURIComponent(message)}`, '_blank');
   };
@@ -321,7 +321,7 @@ export const Invoices: React.FC = () => {
     // In Electron, window.location.origin is file://, which won't work for email links.
     // We should use the web URL if available, otherwise fallback.
     const webBaseUrl = import.meta.env.VITE_WEB_URL || window.location.origin;
-    const publicUrl = `${webBaseUrl.replace(/\/$/, '')}/public/invoice/${invoice.id}`;
+    const publicUrl = `${webBaseUrl.replace(/\/$/, '')}/#/public/invoice/${invoice.id}`;
     
     const storeName = settings.appName || 'JasaPro';
     const docType = invoice.type === 'invoice' ? 'Invoice' : 'Penawaran';
