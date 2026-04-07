@@ -5,12 +5,15 @@ import { format } from 'date-fns';
 import { id } from 'date-fns/locale';
 import { clsx } from 'clsx';
 import { FileText, Search, CheckCircle2, XCircle, Clock, User, Hash } from 'lucide-react';
+import { useAuth } from '../AuthContext';
 
 export const VoucherLogs: React.FC = () => {
+  const { user, loading } = useAuth();
   const [logs, setLogs] = useState<VoucherLog[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
+    if (loading || !user) return;
     const unsub = onSnapshot(
       query(collection(db, 'voucher_logs'), orderBy('usedAt', 'desc')),
       (snap) => {
@@ -19,7 +22,7 @@ export const VoucherLogs: React.FC = () => {
       (error) => handleFirestoreError(error, OperationType.LIST, 'voucher_logs')
     );
     return () => unsub();
-  }, []);
+  }, [user, loading]);
 
   const filteredLogs = logs.filter(log => 
     log.voucherName.toLowerCase().includes(searchTerm.toLowerCase()) ||

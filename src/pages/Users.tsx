@@ -5,7 +5,7 @@ import { Plus, Search, Trash2, Edit2, X, UserCog, ShieldCheck, User as UserIcon,
 import { useAuth } from '../AuthContext';
 
 export const Users: React.FC = () => {
-  const { isAdmin } = useAuth();
+  const { user, isAdmin, loading } = useAuth();
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -19,6 +19,7 @@ export const Users: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (loading || !user) return;
     const q = query(collection(db, 'users'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ ...doc.data() } as UserProfile));
@@ -26,7 +27,7 @@ export const Users: React.FC = () => {
     }, (error) => handleFirestoreError(error, OperationType.LIST, 'users'));
 
     return unsubscribe;
-  }, []);
+  }, [user, loading]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

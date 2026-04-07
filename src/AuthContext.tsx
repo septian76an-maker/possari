@@ -49,21 +49,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setProfile(newProfile);
           }
         }
-
-        // Seed 'ari' user whenever admin logs in to ensure it exists
-        if (user.email === 'septian76an@gmail.com') {
-          try {
-            const ariRef = doc(db, 'users', 'ari_user_id');
-            await setDoc(ariRef, {
-              uid: 'ari_user_id',
-              email: 'ari@jasapro.com',
-              name: 'ari',
-              role: 'cashier'
-            }, { merge: true });
-          } catch (e) {
-            console.warn('Could not seed ari user (likely permission issue):', e);
-          }
-        }
       } else {
         setProfile(null);
       }

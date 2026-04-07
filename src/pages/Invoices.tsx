@@ -15,7 +15,7 @@ function cn(...inputs: ClassValue[]) {
 }
 
 export const Invoices: React.FC = () => {
-  const { profile, isAdmin } = useAuth();
+  const { user, profile, isAdmin, loading } = useAuth();
   const { settings } = useSettings();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -61,24 +61,38 @@ export const Invoices: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    if (loading || !user) return;
+
     const unsubInvoices = onSnapshot(query(collection(db, 'invoices')), (snap) => {
       setInvoices(snap.docs.map(d => ({ id: d.id, ...d.data() } as Invoice)));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, 'invoices');
     });
     const unsubClients = onSnapshot(query(collection(db, 'clients')), (snap) => {
       setClients(snap.docs.map(d => ({ id: d.id, ...d.data() } as Client)));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, 'clients');
     });
     const unsubServices = onSnapshot(query(collection(db, 'services')), (snap) => {
       setServices(snap.docs.map(d => ({ id: d.id, ...d.data() } as Service)));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, 'services');
     });
     return () => { unsubInvoices(); unsubClients(); unsubServices(); };
-  }, []);
+  }, [user, loading]);
 
   const handleAddItem = (service: Service) => {
     const existing = selectedItems.find(i => i.serviceId === service.id);
     if (existing) {
       setSelectedItems(selectedItems.map(i => i.serviceId === service.id ? { ...i, qty: i.qty + 1 } : i));
     } else {
-      setSelectedItems([...selectedItems, { serviceId: service.id, name: service.name, price: service.price, qty: 1 }]);
+      setSelectedItems([...selectedItems, { 
+        serviceId: service.id, 
+        name: service.name, 
+        description: service.description || '',
+        price: service.price, 
+        qty: 1 
+      }]);
     }
     setItemSearchQuery('');
     setIsItemDropdownOpen(false);
@@ -96,6 +110,12 @@ export const Invoices: React.FC = () => {
       }
       return item;
     }));
+  };
+
+  const handleUpdateDescription = (serviceId: string, description: string) => {
+    setSelectedItems(selectedItems.map(item => 
+      item.serviceId === serviceId ? { ...item, description } : item
+    ));
   };
 
   const totalBeforeDiscount = selectedItems.reduce((acc, curr) => acc + (curr.price * curr.qty), 0);
@@ -235,6 +255,14 @@ export const Invoices: React.FC = () => {
       setTimeout(() => {
         handleShareEmail(savedInvoice);
       }, 500);
+
+      // Auto Print logic
+      if (settings.printerConfig?.autoPrint) {
+        setViewingInvoice(savedInvoice);
+        setTimeout(() => {
+          window.print();
+        }, 1000);
+      }
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, 'invoices');
     }
@@ -290,55 +318,83 @@ export const Invoices: React.FC = () => {
     const client = clients.find(c => c.id === invoice.clientId);
     if (!client?.email) return;
 
-    const publicUrl = `${window.location.origin}/public/invoice/${invoice.id}`;
+    // In Electron, window.location.origin is file://, which won't work for email links.
+    // We should use the web URL if available, otherwise fallback.
+    const webBaseUrl = import.meta.env.VITE_WEB_URL || window.location.origin;
+    const publicUrl = `${webBaseUrl.replace(/\/$/, '')}/public/invoice/${invoice.id}`;
+    
     const storeName = settings.appName || 'JasaPro';
     const docType = invoice.type === 'invoice' ? 'Invoice' : 'Penawaran';
     
     try {
-      const response = await fetch('/api/send-invoice-email', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      // Check if we are in Electron
+      // window.electronAPI is exposed via preload.js
+      const isElectron = navigator.userAgent.toLowerCase().includes(' electron/');
+      const electronAPI = (window as any).electronAPI;
+      
+      if (isElectron) {
+        if (!electronAPI) {
+          throw new Error("Sistem komunikasi Electron (IPC) gagal dimuat. Pastikan file preload.js ada di folder electron-dist.");
+        }
+
+        console.log("Sending email via Electron IPC...");
+        const result = await electronAPI.sendEmail({
           email: client.email,
           clientName: client.name,
           invoiceType: invoice.type,
           invoiceId: invoice.id,
           publicUrl,
           appName: storeName
-        })
+        });
+        
+        if (!result.success) {
+          throw new Error(result.error || "Gagal mengirim email via Electron");
+        }
+      } else {
+        // Web mode: use the Express API
+        const response = await fetch('/api/send-invoice-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: client.email,
+            clientName: client.name,
+            invoiceType: invoice.type,
+            invoiceId: invoice.id,
+            publicUrl,
+            appName: storeName
+          })
+        });
+
+        if (!response.ok) {
+          const err = await response.json();
+          throw new Error(err.message || err.error || "Gagal mengirim email via Server");
+        }
+      }
+
+      console.log("Email sent successfully");
+      setAlertModal({
+        isOpen: true,
+        title: 'Email Terkirim',
+        message: `Dokumen ${docType} telah berhasil dikirim ke ${client.email}.`,
+        type: 'success'
+      });
+    } catch (err: any) {
+      console.error("Email failed:", err);
+      
+      setAlertModal({
+        isOpen: true,
+        title: 'Gagal Mengirim Email',
+        message: `Error: ${err.message}. Pastikan koneksi internet aktif dan RESEND_API_KEY sudah benar.`,
+        type: 'error'
       });
 
-      if (!response.ok) {
-        const err = await response.json();
-        console.error("Email failed:", err);
-        
-        // Show alert for better debugging
-        setAlertModal({
-          isOpen: true,
-          title: 'Gagal Mengirim Email',
-          message: `Server mengembalikan error: ${err.message || err.error || 'Unknown error'}. Pastikan RESEND_API_KEY sudah benar di Vercel.`,
-          type: 'error'
-        });
-
-        // Fallback to mailto if server fails or key is missing
-        const subject = `[OFFICIAL] ${docType} #${invoice.id.slice(0, 8).toUpperCase()} - ${storeName}`;
-        const body = `Halo ${client.name},\n\nTerima kasih telah menggunakan layanan ${storeName}.\n\nBerikut adalah ${docType} resmi Anda yang dapat diakses, diunduh, dan dicetak melalui tautan digital di bawah ini:\n\nLihat Dokumen Digital: ${publicUrl}\n\nJika ada pertanyaan, silakan hubungi kami.\n\nHormat kami,\nTim ${storeName}`;
-        
-        // Delay mailto slightly so user can see the alert
-        setTimeout(() => {
-          window.location.href = `mailto:${client.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-        }, 2000);
-      } else {
-        console.log("Email sent successfully via server");
-        setAlertModal({
-          isOpen: true,
-          title: 'Email Terkirim',
-          message: `Invoice berhasil dikirim ke ${client.email} melalui server.`,
-          type: 'success'
-        });
-      }
-    } catch (error) {
-      console.error("Email API error:", error);
+      // Fallback to mailto
+      const subject = `[OFFICIAL] ${docType} #${invoice.id.slice(0, 8).toUpperCase()} - ${storeName}`;
+      const body = `Halo ${client.name},\n\nTerima kasih telah menggunakan layanan ${storeName}.\n\nBerikut adalah ${docType} resmi Anda yang dapat diakses, diunduh, dan dicetak melalui tautan digital di bawah ini:\n\nLihat Dokumen Digital: ${publicUrl}\n\nJika ada pertanyaan, silakan hubungi kami.\n\nHormat kami,\nTim ${storeName}`;
+      
+      setTimeout(() => {
+        window.location.href = `mailto:${client.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+      }, 2000);
     }
   };
 
@@ -636,12 +692,19 @@ export const Invoices: React.FC = () => {
                 <div className="flex-1 space-y-4 mb-6">
                   {selectedItems.map(item => (
                     <div key={item.serviceId} className="bg-app-card p-4 rounded-xl shadow-sm space-y-3 border border-app-border">
-                      <div className="flex items-center justify-between">
+                      <div className="flex items-start justify-between">
                         <div className="flex-1">
                           <p className="font-bold text-app-text">{item.name}</p>
-                          <p className="text-xs text-app-text-muted">Rp {item.price.toLocaleString('id-ID')}</p>
+                          <textarea
+                            className="w-full mt-1 px-2 py-1 bg-app-bg border border-app-border rounded-lg text-[10px] text-app-text-muted focus:ring-1 focus:ring-app-primary resize-none"
+                            placeholder="Tambahkan deskripsi..."
+                            rows={2}
+                            value={item.description || ''}
+                            onChange={(e) => handleUpdateDescription(item.serviceId, e.target.value)}
+                          />
+                          <p className="text-xs text-app-text-muted mt-1">Rp {item.price.toLocaleString('id-ID')}</p>
                         </div>
-                        <button onClick={() => handleRemoveItem(item.serviceId)} className="text-app-text-muted hover:text-red-500 transition-colors">
+                        <button onClick={() => handleRemoveItem(item.serviceId)} className="text-app-text-muted hover:text-red-500 transition-colors ml-2">
                           <Trash2 size={16} />
                         </button>
                       </div>

@@ -49,6 +49,7 @@
             "properties": {
               "serviceId": { "type": "string" },
               "name": { "type": "string" },
+              "description": { "type": "string" },
               "price": { "type": "number" },
               "qty": { "type": "number" }
             }

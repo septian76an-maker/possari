@@ -15,7 +15,12 @@ const defaultSettings: AppSettings = {
   appPhone: '0812-xxxx-xxxx',
   appEmail: 'admin@bisnisanda.com',
   bankAccounts: [],
-  theme: 'default'
+  theme: 'default',
+  printerConfig: {
+    type: 'system',
+    paperWidth: '58mm',
+    autoPrint: false
+  }
 };
 
 const SettingsContext = createContext<SettingsContextType>({

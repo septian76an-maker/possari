@@ -2,8 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { db, collection, onSnapshot, query, addDoc, deleteDoc, doc, updateDoc, handleFirestoreError, OperationType } from '../firebase';
 import { Client } from '../types';
 import { Plus, Search, Trash2, Edit2, X, UserPlus, Loader2, AlertCircle } from 'lucide-react';
+import { useAuth } from '../AuthContext';
 
 export const Clients: React.FC = () => {
+  const { user, loading } = useAuth();
   const [clients, setClients] = useState<Client[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -16,6 +18,7 @@ export const Clients: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (loading || !user) return;
     const q = query(collection(db, 'clients'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Client));
@@ -23,7 +26,7 @@ export const Clients: React.FC = () => {
     }, (error) => handleFirestoreError(error, OperationType.LIST, 'clients'));
 
     return unsubscribe;
-  }, []);
+  }, [user, loading]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

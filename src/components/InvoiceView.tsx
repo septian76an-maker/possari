@@ -87,7 +87,14 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({ invoice, client, isPub
           <tbody className="divide-y divide-neutral-100">
             {invoice.items.map((item, idx) => (
               <tr key={idx}>
-                <td className="py-4 text-neutral-900 font-medium text-sm sm:text-base">{item.name}</td>
+                <td className="py-4 text-neutral-900 font-medium text-sm sm:text-base">
+                  <div className="font-bold">{item.name}</div>
+                  {item.description && (
+                    <div className="text-xs text-neutral-500 mt-1 font-normal whitespace-pre-wrap leading-relaxed">
+                      {item.description}
+                    </div>
+                  )}
+                </td>
                 <td className="py-4 text-center text-neutral-600 text-sm sm:text-base">Rp {item.price.toLocaleString('id-ID')}</td>
                 <td className="py-4 text-center text-neutral-600 text-sm sm:text-base">{item.qty}</td>
                 <td className="py-4 text-right font-bold text-neutral-900 text-sm sm:text-base">Rp {(item.price * item.qty).toLocaleString('id-ID')}</td>

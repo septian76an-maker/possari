@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { db, collection, onSnapshot, query, handleFirestoreError, OperationType } from '../firebase';
 import { Invoice, Client, Service } from '../types';
+import { useAuth } from '../AuthContext';
 import { 
   TrendingUp, 
   Users, 
@@ -16,6 +17,7 @@ import { format } from 'date-fns';
 import { id } from 'date-fns/locale';
 
 export const Dashboard: React.FC = () => {
+  const { user, loading } = useAuth();
   const [stats, setStats] = useState({
     totalRevenue: 0,
     totalClients: 0,
@@ -25,24 +27,32 @@ export const Dashboard: React.FC = () => {
   const [recentInvoices, setRecentInvoices] = useState<Invoice[]>([]);
 
   useEffect(() => {
+    if (loading || !user) return;
+
     const unsubInvoices = onSnapshot(query(collection(db, 'invoices')), (snap) => {
       const data = snap.docs.map(d => d.data() as Invoice);
       const revenue = data.filter(i => i.status === 'paid').reduce((acc, curr) => acc + curr.total, 0);
       const pending = data.filter(i => i.status === 'pending').length;
       setStats(prev => ({ ...prev, totalRevenue: revenue, pendingInvoices: pending }));
       setRecentInvoices(snap.docs.map(d => ({ id: d.id, ...d.data() } as Invoice)).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 5));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, 'invoices');
     });
 
     const unsubClients = onSnapshot(query(collection(db, 'clients')), (snap) => {
       setStats(prev => ({ ...prev, totalClients: snap.size }));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, 'clients');
     });
 
     const unsubServices = onSnapshot(query(collection(db, 'services')), (snap) => {
       setStats(prev => ({ ...prev, totalServices: snap.size }));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, 'services');
     });
 
     return () => { unsubInvoices(); unsubClients(); unsubServices(); };
-  }, []);
+  }, [user, loading]);
 
   const cards = [
     { name: 'Total Pendapatan', value: `Rp ${stats.totalRevenue.toLocaleString('id-ID')}`, icon: TrendingUp, color: 'text-emerald-500', bg: 'bg-emerald-500/10' },

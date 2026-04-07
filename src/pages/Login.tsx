@@ -23,26 +23,21 @@ export const Login: React.FC = () => {
       const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier);
       
       if (!isEmail) {
-        // Hardcoded fallback for 'ari' to ensure it works even before first admin login
-        if (identifier.toLowerCase() === 'ari') {
-          email = 'ari@jasapro.com';
+        // Look up in Firestore
+        const usersRef = collection(db, 'users');
+        const q = query(usersRef, where('name', '==', identifier));
+        const querySnapshot = await getDocs(q);
+        
+        if (!querySnapshot.empty) {
+          email = querySnapshot.docs[0].data().email;
         } else {
-          // If not 'ari', look up in Firestore
-          const usersRef = collection(db, 'users');
-          const q = query(usersRef, where('name', '==', identifier));
-          const querySnapshot = await getDocs(q);
-          
-          if (!querySnapshot.empty) {
-            email = querySnapshot.docs[0].data().email;
+          // Try lowercase as fallback
+          const qLower = query(usersRef, where('name', '==', identifier.toLowerCase()));
+          const querySnapshotLower = await getDocs(qLower);
+          if (!querySnapshotLower.empty) {
+            email = querySnapshotLower.docs[0].data().email;
           } else {
-            // Try lowercase as fallback
-            const qLower = query(usersRef, where('name', '==', identifier.toLowerCase()));
-            const querySnapshotLower = await getDocs(qLower);
-            if (!querySnapshotLower.empty) {
-              email = querySnapshotLower.docs[0].data().email;
-            } else {
-              throw new Error('Username tidak ditemukan.');
-            }
+            throw new Error('Username tidak ditemukan.');
           }
         }
       }

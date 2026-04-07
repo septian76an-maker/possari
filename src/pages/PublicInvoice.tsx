@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom';
 import { db, doc, getDoc, handleFirestoreError, OperationType } from '../firebase';
 import { Invoice, Client } from '../types';
 import { InvoiceView } from '../components/InvoiceView';
-import { Loader2, AlertCircle } from 'lucide-react';
+import { Loader2, AlertCircle, Printer } from 'lucide-react';
 import { useSettings } from '../SettingsContext';
 
 export const PublicInvoice: React.FC = () => {
@@ -63,8 +63,17 @@ export const PublicInvoice: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-app-bg py-6 md:py-12 px-4 md:px-6">
+      <div className="max-w-4xl mx-auto mb-6 flex justify-end print:hidden">
+        <button 
+          onClick={() => window.print()}
+          className="flex items-center gap-2 px-6 py-3 bg-app-primary text-white rounded-xl font-bold hover:opacity-90 transition-all shadow-lg shadow-app-primary/20"
+        >
+          <Printer size={18} />
+          Cetak Invoice
+        </button>
+      </div>
       <InvoiceView invoice={invoice} client={client || undefined} isPublic={true} />
-      <div className="max-w-4xl mx-auto mt-8 text-center pb-8">
+      <div className="max-w-4xl mx-auto mt-8 text-center pb-8 print:hidden">
         <p className="text-xs text-app-text-muted uppercase tracking-widest font-bold">
           Diterbitkan oleh {settings.appName || 'Sistem Invoice'}
         </p>

@@ -23,6 +23,7 @@ export interface Service {
 export interface InvoiceItem {
   serviceId: string;
   name: string;
+  description?: string;
   price: number;
   qty: number;
 }
@@ -74,6 +75,16 @@ export interface BankAccount {
   accountHolder?: string;
 }
 
+export interface PrinterConfig {
+  type: 'usb' | 'ip' | 'system';
+  usbVendorId?: string;
+  usbProductId?: string;
+  ipAddress?: string;
+  ipPort?: number;
+  paperWidth?: '58mm' | '80mm';
+  autoPrint?: boolean;
+}
+
 export interface AppSettings {
   appName: string;
   appLogo: string;
@@ -82,4 +93,5 @@ export interface AppSettings {
   appEmail: string;
   bankAccounts?: BankAccount[];
   theme?: 'default' | 'dark' | 'ocean';
+  printerConfig?: PrinterConfig;
 }

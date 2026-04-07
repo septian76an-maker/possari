@@ -5,12 +5,15 @@ import { format } from 'date-fns';
 import { id } from 'date-fns/locale';
 import { clsx } from 'clsx';
 import { BarChart3, Search, Tag, CheckCircle2, Clock, Hash } from 'lucide-react';
+import { useAuth } from '../AuthContext';
 
 export const VoucherStats: React.FC = () => {
+  const { user, loading } = useAuth();
   const [vouchers, setVouchers] = useState<Voucher[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
+    if (loading || !user) return;
     const unsub = onSnapshot(
       query(collection(db, 'vouchers'), orderBy('createdAt', 'desc')),
       (snap) => {
@@ -19,7 +22,7 @@ export const VoucherStats: React.FC = () => {
       (error) => handleFirestoreError(error, OperationType.LIST, 'vouchers')
     );
     return () => unsub();
-  }, []);
+  }, [user, loading]);
 
   interface CampaignStat {
     name: string;

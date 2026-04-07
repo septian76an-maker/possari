@@ -9,7 +9,7 @@ import { useAuth } from '../AuthContext';
 import * as XLSX from 'xlsx';
 
 export const Vouchers: React.FC = () => {
-  const { isAdmin } = useAuth();
+  const { user, isAdmin, loading } = useAuth();
   const [vouchers, setVouchers] = useState<Voucher[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
@@ -28,11 +28,14 @@ export const Vouchers: React.FC = () => {
   const [quantity, setQuantity] = useState<number>(1);
 
   useEffect(() => {
+    if (loading || !user) return;
     const unsub = onSnapshot(query(collection(db, 'vouchers')), (snap) => {
       setVouchers(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Voucher)));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, 'vouchers');
     });
     return () => unsub();
-  }, []);
+  }, [user, loading]);
 
   const generateRandomCode = () => {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';

@@ -5,7 +5,7 @@ import { Plus, Search, Trash2, Edit2, X, Package, Loader2, AlertCircle } from 'l
 import { useAuth } from '../AuthContext';
 
 export const Services: React.FC = () => {
-  const { isAdmin } = useAuth();
+  const { user, isAdmin, loading } = useAuth();
   const [services, setServices] = useState<Service[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -18,6 +18,7 @@ export const Services: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (loading || !user) return;
     const q = query(collection(db, 'services'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Service));
@@ -25,7 +26,7 @@ export const Services: React.FC = () => {
     }, (error) => handleFirestoreError(error, OperationType.LIST, 'services'));
 
     return unsubscribe;
-  }, []);
+  }, [user, loading]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
