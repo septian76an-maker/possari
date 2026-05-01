@@ -42,7 +42,9 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({ invoice, client, isPub
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-8 sm:gap-12 mb-8 sm:mb-12">
         <div>
-          <h3 className="text-[10px] sm:text-xs font-bold text-neutral-400 uppercase tracking-widest mb-3">Ditagihkan Kepada</h3>
+          <h3 className="text-[10px] sm:text-xs font-bold text-neutral-400 uppercase tracking-widest mb-3">
+            {invoice.type === 'invoice' ? 'Ditagihkan Kepada' : 'Ditawarkan Kepada'}
+          </h3>
           <p className="text-base sm:text-lg font-bold text-neutral-900">{invoice.clientName}</p>
           {client && (
             <div className="text-sm sm:text-base">
@@ -61,18 +63,26 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({ invoice, client, isPub
                 {format(new Date(invoice.createdAt), 'dd MMMM yyyy', { locale: id })}
               </span>
             </div>
-            <div className="flex justify-start sm:justify-end gap-4">
-              <span className="text-neutral-500">Status:</span>
-              <span className={clsx(
-                "font-bold uppercase text-[10px] sm:text-xs px-2 py-0.5 rounded",
-                invoice.status === 'paid' ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"
-              )}>
-                {invoice.status === 'paid' ? 'Lunas' : 'Belum Bayar'}
-              </span>
-            </div>
+            {invoice.type === 'invoice' && (
+              <div className="flex justify-start sm:justify-end gap-4">
+                <span className="text-neutral-500">Status:</span>
+                <span className={clsx(
+                  "font-bold uppercase text-[10px] sm:text-xs px-2 py-0.5 rounded",
+                  invoice.status === 'paid' ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"
+                )}>
+                  {invoice.status === 'paid' ? 'Lunas' : 'Belum Bayar'}
+                </span>
+              </div>
+            )}
           </div>
         </div>
       </div>
+
+      {invoice.type === 'quotation' && settings.quotationBeforeTable && (
+        <div className="mb-6 text-sm text-neutral-700 whitespace-pre-wrap leading-relaxed">
+          {settings.quotationBeforeTable}
+        </div>
+      )}
 
       <div className="overflow-x-auto -mx-4 sm:mx-0 mb-8 sm:mb-12">
         <table className="w-full min-w-[500px] sm:min-w-0">
@@ -129,24 +139,32 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({ invoice, client, isPub
         </table>
       </div>
 
+      {invoice.type === 'quotation' && settings.quotationAfterTable && (
+        <div className="mb-12 text-sm text-neutral-700 whitespace-pre-wrap leading-relaxed">
+          {settings.quotationAfterTable}
+        </div>
+      )}
+
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-8">
         <div className="text-neutral-400 text-[10px] sm:text-xs italic w-full sm:w-auto">
-          <p>Terima kasih atas kepercayaan Anda.</p>
-          {settings.bankAccounts && settings.bankAccounts.length > 0 ? (
-            <div className="mt-4 not-italic text-neutral-600 space-y-3">
-              <p className="font-bold text-neutral-900 uppercase tracking-widest text-[10px] mb-1">Informasi Pembayaran:</p>
-              <div className="grid grid-cols-1 gap-3">
-                {settings.bankAccounts.map((acc, i) => (
-                  <div key={i} className="bg-neutral-50 p-3 rounded-lg border border-neutral-100">
-                    <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-tight">{acc.bankName}</p>
-                    <p className="font-mono text-sm font-bold text-neutral-900">{acc.accountNumber}</p>
-                    {acc.accountHolder && <p className="text-[10px] text-neutral-500 mt-1">a/n {acc.accountHolder}</p>}
-                  </div>
-                ))}
+          <p>{settings.footerNote || 'Terima kasih atas kepercayaan Anda.'}</p>
+          {invoice.type === 'invoice' && (
+            settings.bankAccounts && settings.bankAccounts.length > 0 ? (
+              <div className="mt-4 not-italic text-neutral-600 space-y-3">
+                <p className="font-bold text-neutral-900 uppercase tracking-widest text-[10px] mb-1">Informasi Pembayaran:</p>
+                <div className="grid grid-cols-1 gap-3">
+                  {settings.bankAccounts.map((acc, i) => (
+                    <div key={i} className="bg-neutral-50 p-3 rounded-lg border border-neutral-100">
+                      <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-tight">{acc.bankName}</p>
+                      <p className="font-mono text-sm font-bold text-neutral-900">{acc.accountNumber}</p>
+                      {acc.accountHolder && <p className="text-[10px] text-neutral-500 mt-1">a/n {acc.accountHolder}</p>}
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
-          ) : (
-            <p className="mt-2">Pembayaran dapat dilakukan melalui Transfer Bank yang telah disepakati.</p>
+            ) : (
+              <p className="mt-2">Pembayaran dapat dilakukan melalui Transfer Bank yang telah disepakati.</p>
+            )
           )}
         </div>
         

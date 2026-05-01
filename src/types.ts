@@ -94,4 +94,7 @@ export interface AppSettings {
   bankAccounts?: BankAccount[];
   theme?: 'default' | 'dark' | 'ocean';
   printerConfig?: PrinterConfig;
+  footerNote?: string;
+  quotationBeforeTable?: string;
+  quotationAfterTable?: string;
 }

@@ -20,7 +20,10 @@ const defaultSettings: AppSettings = {
     type: 'system',
     paperWidth: '58mm',
     autoPrint: false
-  }
+  },
+  footerNote: 'Terima kasih atas kepercayaan Anda.',
+  quotationBeforeTable: 'Bersama ini kami kirimkan penawaran harga untuk jasa/produk sebagai berikut:',
+  quotationAfterTable: 'Penawaran ini berlaku selama 14 hari sejak tanggal diterbitkan. Demikian penawaran ini kami sampaikan, atas perhatiannya kami ucapkan terima kasih.'
 };
 
 const SettingsContext = createContext<SettingsContextType>({

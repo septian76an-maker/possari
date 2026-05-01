@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { db, collection, onSnapshot, query, addDoc, deleteDoc, doc, updateDoc, handleFirestoreError, OperationType, getDocs, where, limit } from '../firebase';
 import { Invoice, Client, Service, InvoiceItem, Voucher } from '../types';
-import { Plus, Minus, Search, Trash2, FileText, X, Printer, Send, ExternalLink, CheckCircle2, Clock, Filter, Calendar, AlertTriangle, Loader2, Mail, ChevronDown, Tag, Check } from 'lucide-react';
+import { Plus, Minus, Search, Trash2, FileText, X, Printer, Send, ExternalLink, CheckCircle2, Clock, Filter, Calendar, AlertTriangle, Loader2, Mail, ChevronDown, Tag, Check, Download } from 'lucide-react';
+import html2pdf from 'html2pdf.js';
 import { useAuth } from '../AuthContext';
 import { useSettings } from '../SettingsContext';
 import { InvoiceView } from '../components/InvoiceView';
+import { ReceiptView } from '../components/ReceiptView';
 import { format, isSameDay } from 'date-fns';
 import { id } from 'date-fns/locale';
 import { clsx, type ClassValue } from 'clsx';
@@ -22,6 +24,7 @@ export const Invoices: React.FC = () => {
   const [services, setServices] = useState<Service[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [viewingInvoice, setViewingInvoice] = useState<Invoice | null>(null);
+  const [isPrintingReceipt, setIsPrintingReceipt] = useState(false);
   
   // Delete Modal State
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
@@ -35,6 +38,7 @@ export const Invoices: React.FC = () => {
 
   // Form State
   const [type, setType] = useState<'invoice' | 'quotation'>('invoice');
+  const [status, setStatus] = useState<'pending' | 'paid'>('pending');
   const [selectedClientId, setSelectedClientId] = useState('');
   const [selectedItems, setSelectedItems] = useState<InvoiceItem[]>([]);
   const [itemSearchQuery, setItemSearchQuery] = useState('');
@@ -49,6 +53,7 @@ export const Invoices: React.FC = () => {
     type: 'error'
   });
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const pdfRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -219,7 +224,7 @@ export const Invoices: React.FC = () => {
       total,
       discountAmount,
       voucherCode: appliedVoucher?.code || null,
-      status: 'pending',
+      status,
       type,
       createdAt: new Date().toISOString(),
       createdBy: profile?.uid || 'system',
@@ -257,15 +262,26 @@ export const Invoices: React.FC = () => {
       }, 500);
 
       // Auto Print logic
-      if (settings.printerConfig?.autoPrint) {
+      if (settings.printerConfig?.autoPrint && newInvoice.status === 'paid') {
+        setIsPrintingReceipt(true);
         setViewingInvoice(savedInvoice);
         setTimeout(() => {
           window.print();
+          setIsPrintingReceipt(false);
         }, 1000);
       }
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, 'invoices');
     }
+  };
+
+  const handlePrintReceipt = (invoice: Invoice) => {
+    setIsPrintingReceipt(true);
+    setViewingInvoice(invoice);
+    setTimeout(() => {
+      window.print();
+      setIsPrintingReceipt(false);
+    }, 500);
   };
 
   const resetForm = () => {
@@ -276,11 +292,17 @@ export const Invoices: React.FC = () => {
     setVoucherCode('');
     setAppliedVoucher(null);
     setType('invoice');
+    setStatus('pending');
   };
 
   const handleStatusChange = async (invoice: Invoice, status: 'paid' | 'cancelled') => {
     try {
       await updateDoc(doc(db, 'invoices', invoice.id), { status });
+      
+      // Auto Print Receipt if marked as paid
+      if (status === 'paid' && settings.printerConfig?.autoPrint) {
+        handlePrintReceipt({ ...invoice, status });
+      }
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, 'invoices');
     }
@@ -396,6 +418,20 @@ export const Invoices: React.FC = () => {
         window.location.href = `mailto:${client.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
       }, 2000);
     }
+  };
+
+  const handleDownloadPDF = () => {
+    if (!viewingInvoice || !pdfRef.current) return;
+
+    const opt = {
+      margin: 10,
+      filename: `${viewingInvoice.type === 'invoice' ? 'Invoice' : 'Penawaran'}_${viewingInvoice.id.slice(0, 8).toUpperCase()}.pdf`,
+      image: { type: 'jpeg' as const, quality: 0.98 },
+      html2canvas: { scale: 2, useCORS: true },
+      jsPDF: { unit: 'mm' as const, format: 'a4' as const, orientation: 'portrait' as const }
+    };
+
+    html2pdf().from(pdfRef.current).set(opt).save();
   };
 
   const filteredInvoices = invoices
@@ -621,7 +657,35 @@ export const Invoices: React.FC = () => {
                   </div>
                 </div>
 
-                <div>
+                {type === 'invoice' && (
+                  <div>
+                    <label className="block text-xs font-bold text-app-text-muted uppercase mb-3 tracking-widest">Status Pembayaran</label>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setStatus('pending')}
+                        className={cn(
+                          "flex-1 py-3 rounded-xl text-[10px] font-black uppercase transition-all border-2",
+                          status === 'pending' ? "bg-amber-500/10 border-amber-500 text-amber-600" : "bg-app-bg border-transparent text-app-text-muted"
+                        )}
+                      >
+                        Belum Lunas
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setStatus('paid')}
+                        className={cn(
+                          "flex-1 py-3 rounded-xl text-[10px] font-black uppercase transition-all border-2",
+                          status === 'paid' ? "bg-emerald-500/10 border-emerald-500 text-emerald-600" : "bg-app-bg border-transparent text-app-text-muted"
+                        )}
+                      >
+                        Lunas (Cetak Struk)
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="text-black text-base">
                   <label className="block text-xs font-bold text-app-text-muted uppercase mb-3 tracking-widest">Pilih Klien</label>
                   <select 
                     className="w-full px-4 py-3 bg-app-bg border-none rounded-xl focus:ring-2 focus:ring-app-primary text-app-text"
@@ -633,7 +697,7 @@ export const Invoices: React.FC = () => {
                   </select>
                 </div>
 
-                <div>
+                <div className="text-black text-base">
                   <label className="block text-xs font-bold text-app-text-muted uppercase mb-3 tracking-widest">Pilih Jasa/Barang</label>
                   <div className="relative" ref={dropdownRef}>
                     <div className="relative">
@@ -848,10 +912,19 @@ export const Invoices: React.FC = () => {
       {viewingInvoice && (
         <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-6 backdrop-blur-sm">
           <div className="bg-app-card rounded-2xl w-full max-w-5xl max-h-[95vh] overflow-hidden flex flex-col border border-app-border">
-            <div className="p-6 border-b border-app-border flex justify-between items-center bg-app-bg">
+            <div className="p-6 border-b border-app-border flex justify-between items-center bg-app-bg print:hidden">
               <div className="flex items-center gap-4">
-                <button onClick={() => window.print()} className="flex items-center gap-2 bg-app-card border border-app-border px-4 py-2 rounded-lg text-sm font-bold text-app-text hover:bg-app-bg transition-all">
-                  <Printer size={16} /> Cetak
+                <button 
+                  onClick={() => { setIsPrintingReceipt(false); setTimeout(() => window.print(), 100); }} 
+                  className="flex items-center gap-2 bg-app-card border border-app-border px-4 py-2 rounded-lg text-sm font-bold text-app-text hover:bg-app-bg transition-all"
+                >
+                  <Printer size={16} /> Invoice
+                </button>
+                <button 
+                  onClick={() => handlePrintReceipt(viewingInvoice)} 
+                  className="flex items-center gap-2 bg-app-card border border-app-border px-4 py-2 rounded-lg text-sm font-bold text-app-text hover:bg-app-bg transition-all"
+                >
+                  <Printer size={16} /> Struk
                 </button>
                 <button onClick={() => handleShareWhatsApp(viewingInvoice)} className="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-emerald-700 transition-all">
                   <Send size={16} /> WhatsApp
@@ -859,16 +932,28 @@ export const Invoices: React.FC = () => {
                 <button onClick={() => handleShareEmail(viewingInvoice)} className="flex items-center gap-2 bg-app-primary text-white px-4 py-2 rounded-lg text-sm font-bold hover:opacity-90 transition-all">
                   <Send size={16} /> Email
                 </button>
+                <button onClick={handleDownloadPDF} className="flex items-center gap-2 bg-neutral-800 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-black transition-all">
+                  <Download size={16} /> PDF
+                </button>
               </div>
-              <button onClick={() => setViewingInvoice(null)} className="text-app-text-muted hover:text-app-text">
+              <button onClick={() => { setViewingInvoice(null); setIsPrintingReceipt(false); }} className="text-app-text-muted hover:text-app-text">
                 <X size={24} />
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto p-12 bg-app-bg">
-              <InvoiceView 
-                invoice={viewingInvoice} 
-                client={clients.find(c => c.id === viewingInvoice.clientId)} 
-              />
+            <div className="flex-1 overflow-y-auto p-12 bg-app-bg print:bg-white print:p-0">
+              <div ref={pdfRef} className="bg-white p-8">
+                {isPrintingReceipt ? (
+                  <ReceiptView 
+                    invoice={viewingInvoice} 
+                    client={clients.find(c => c.id === viewingInvoice.clientId)} 
+                  />
+                ) : (
+                  <InvoiceView 
+                    invoice={viewingInvoice} 
+                    client={clients.find(c => c.id === viewingInvoice.clientId)} 
+                  />
+                )}
+              </div>
             </div>
           </div>
         </div>

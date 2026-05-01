@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useSettings } from '../SettingsContext';
 import { useAuth } from '../AuthContext';
-import { Save, Building2, MapPin, Phone, Mail, Image as ImageIcon, CheckCircle2, CreditCard, Plus, Trash2, Palette, Sun, Moon, Waves, Printer, Usb, Globe } from 'lucide-react';
+import { Save, Building2, MapPin, Phone, Mail, Image as ImageIcon, CheckCircle2, CreditCard, Plus, Trash2, Palette, Sun, Moon, Waves, Printer, Usb, Globe, FileText } from 'lucide-react';
 import { clsx } from 'clsx';
 
 export const Settings: React.FC = () => {
@@ -10,6 +10,50 @@ export const Settings: React.FC = () => {
   const [formData, setFormData] = useState(settings);
   const [isSaving, setIsSaving] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
+  const [isProcessingImage, setIsProcessingImage] = useState(false);
+
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsProcessingImage(true);
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_SIZE = 800; // Increased for better clarity on PDF
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > MAX_SIZE) {
+            height *= MAX_SIZE / width;
+            width = MAX_SIZE;
+          }
+        } else {
+          if (height > MAX_SIZE) {
+            width *= MAX_SIZE / height;
+            height = MAX_SIZE;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          ctx.drawImage(img, 0, 0, width, height);
+          const base64 = canvas.toDataURL('image/png');
+          setFormData({ ...formData, appLogo: base64 });
+        }
+        setIsProcessingImage(false);
+      };
+      img.src = event.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
 
   const updatePrinterConfig = (field: string, value: any) => {
     setFormData({
@@ -93,18 +137,40 @@ export const Settings: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-app-text-muted uppercase mb-2 tracking-widest">URL Logo (Opsional)</label>
-                <div className="relative">
-                  <ImageIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-app-text-muted" size={18} />
-                  <input
-                    type="text"
-                    placeholder="https://example.com/logo.png"
-                    className="w-full pl-12 pr-4 py-3 bg-app-bg border-none rounded-xl focus:ring-2 focus:ring-app-primary transition-all text-app-text"
-                    value={formData.appLogo}
-                    onChange={(e) => setFormData({ ...formData, appLogo: e.target.value })}
-                  />
+                <label className="block text-xs font-bold text-app-text-muted uppercase mb-2 tracking-widest">Logo Bisnis</label>
+                <div className="flex items-center gap-4">
+                  <div className="w-20 h-20 bg-app-bg border-2 border-dashed border-app-border rounded-xl flex items-center justify-center overflow-hidden relative group">
+                    {formData.appLogo ? (
+                      <>
+                        <img src={formData.appLogo} alt="Business Logo" className="w-full h-full object-contain" />
+                        <button
+                          type="button"
+                          onClick={() => setFormData({ ...formData, appLogo: '' })}
+                          className="absolute inset-0 bg-black/50 text-white opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      </>
+                    ) : (
+                      <ImageIcon className="text-app-text-muted/30" size={32} />
+                    )}
+                    {isProcessingImage && (
+                      <div className="absolute inset-0 bg-app-bg/80 flex items-center justify-center">
+                        <div className="w-6 h-6 border-2 border-app-primary border-t-transparent rounded-full animate-spin" />
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex-1">
+                    <label className="inline-flex items-center gap-2 bg-app-bg px-4 py-2 rounded-lg text-xs font-bold text-app-text cursor-pointer hover:bg-app-border transition-colors">
+                      <Plus size={14} />
+                      Pilih Logo Baru
+                      <input type="file" className="hidden" accept="image/*" onChange={handleLogoUpload} />
+                    </label>
+                    <p className="mt-2 text-[10px] text-app-text-muted leading-relaxed">
+                      Format PNG/JPG. Ukuran akan dioptimalkan secara otomatis untuk Invoice & Penawaran agar cepat dimuat.
+                    </p>
+                  </div>
                 </div>
-                <p className="mt-2 text-[10px] text-app-text-muted">Gunakan URL gambar publik untuk logo Anda.</p>
               </div>
 
               <div className="pt-4">
@@ -213,6 +279,53 @@ export const Settings: React.FC = () => {
                     value={formData.appAddress}
                     onChange={(e) => setFormData({ ...formData, appAddress: e.target.value })}
                   />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-app-text-muted uppercase mb-2 tracking-widest">Catatan Kaki (Footer) Dokumen</label>
+                <div className="relative">
+                  <FileText className="absolute left-4 top-4 text-app-text-muted" size={18} />
+                  <textarea
+                    rows={2}
+                    placeholder="Terima kasih atas kepercayaan Anda."
+                    className="w-full pl-12 pr-4 py-3 bg-app-bg border-none rounded-xl focus:ring-2 focus:ring-app-primary transition-all text-app-text"
+                    value={formData.footerNote || ''}
+                    onChange={(e) => setFormData({ ...formData, footerNote: e.target.value })}
+                  />
+                </div>
+                <p className="mt-2 text-[10px] text-app-text-muted">Muncul di bagian bawah Invoice dan Penawaran.</p>
+              </div>
+
+              <div className="pt-4 space-y-6">
+                <h3 className="text-sm font-black text-app-text uppercase tracking-widest border-b border-app-border/50 pb-2 mb-4 text-emerald-600">Khusus Penawaran (Quotation)</h3>
+                
+                <div>
+                  <label className="block text-xs font-bold text-app-text-muted uppercase mb-2 tracking-widest">Teks Sebelum Tabel</label>
+                  <div className="relative">
+                    <FileText className="absolute left-4 top-4 text-app-text-muted" size={18} />
+                    <textarea
+                      rows={2}
+                      placeholder="Contoh: Bersama ini kami kirimkan penawaran..."
+                      className="w-full pl-12 pr-4 py-3 bg-app-bg border-none rounded-xl focus:ring-2 focus:ring-app-primary transition-all text-app-text"
+                      value={formData.quotationBeforeTable || ''}
+                      onChange={(e) => setFormData({ ...formData, quotationBeforeTable: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-app-text-muted uppercase mb-2 tracking-widest">Teks Sesudah Tabel</label>
+                  <div className="relative">
+                    <FileText className="absolute left-4 top-4 text-app-text-muted" size={18} />
+                    <textarea
+                      rows={3}
+                      placeholder="Contoh: Penawaran ini berlaku selama..."
+                      className="w-full pl-12 pr-4 py-3 bg-app-bg border-none rounded-xl focus:ring-2 focus:ring-app-primary transition-all text-app-text"
+                      value={formData.quotationAfterTable || ''}
+                      onChange={(e) => setFormData({ ...formData, quotationAfterTable: e.target.value })}
+                    />
+                  </div>
                 </div>
               </div>
 
