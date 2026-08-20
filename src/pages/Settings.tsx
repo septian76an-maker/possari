@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useSettings } from '../SettingsContext';
 import { useAuth } from '../AuthContext';
-import { Save, Building2, MapPin, Phone, Mail, Image as ImageIcon, CheckCircle2, CreditCard, Plus, Trash2, Palette, Sun, Moon, Waves, Printer, Usb, Globe, FileText } from 'lucide-react';
+import { Save, Building2, MapPin, Phone, Mail, Image as ImageIcon, CheckCircle2, CreditCard, Plus, Trash2, Palette, Sun, Moon, Waves, Printer, Usb, Globe, FileText, QrCode, Settings as SettingsIcon, ArrowRight } from 'lucide-react';
 import { clsx } from 'clsx';
 
 export const Settings: React.FC = () => {
@@ -110,10 +111,59 @@ export const Settings: React.FC = () => {
   }
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8">
-      <div>
-        <h1 className="text-3xl font-black text-app-text tracking-tight">Pengaturan Aplikasi</h1>
-        <p className="text-app-text-muted">Sesuaikan identitas bisnis Anda pada invoice dan aplikasi.</p>
+    <div className="max-w-4xl mx-auto space-y-6">
+      {/* Header with Submenu Tabs */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-black text-app-text tracking-tight">Pengaturan Umum</h1>
+          <p className="text-app-text-muted mt-1">Sesuaikan identitas bisnis, kontak, rekening, tema, dan format dokumen.</p>
+        </div>
+
+        {/* Quick Submenu Tabs */}
+        <div className="flex items-center bg-app-card p-1 rounded-xl border border-app-border">
+          <div className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold bg-app-primary text-white shadow-sm">
+            <SettingsIcon size={16} />
+            Pengaturan Umum
+          </div>
+          <Link
+            to="/settings/qris"
+            className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold text-app-text-muted hover:text-app-text transition-colors"
+          >
+            <QrCode size={16} />
+            Pembayaran QRIS
+          </Link>
+        </div>
+      </div>
+
+      {/* Quick QRIS Configuration Card Banner */}
+      <div className="bg-gradient-to-r from-red-600/10 via-app-card to-app-card rounded-2xl border border-red-600/20 p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm">
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 rounded-xl bg-red-600 text-white flex items-center justify-center font-black shrink-0 shadow-md">
+            <QrCode size={24} />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="font-bold text-base text-app-text">Metode Pembayaran QRIS</h3>
+              <span className={clsx(
+                "text-[10px] font-black uppercase px-2 py-0.5 rounded-full",
+                settings.qrisConfig?.enabled ? "bg-emerald-600 text-white" : "bg-neutral-200 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300"
+              )}>
+                {settings.qrisConfig?.enabled ? 'Aktif' : 'Nonaktif'}
+              </span>
+            </div>
+            <p className="text-xs text-app-text-muted mt-0.5">
+              Konfigurasi barcode QRIS, upload foto barcode, dan tentukan penempatan di invoice/penawaran.
+            </p>
+          </div>
+        </div>
+        <Link
+          to="/settings/qris"
+          className="flex items-center gap-2 px-5 py-2.5 bg-red-600 text-white text-xs font-bold rounded-xl hover:bg-red-700 transition-all shrink-0 shadow-sm"
+        >
+          <QrCode size={16} />
+          Kelola QRIS
+          <ArrowRight size={14} />
+        </Link>
       </div>
 
       <div className="bg-app-card rounded-2xl border border-app-border overflow-hidden shadow-sm">

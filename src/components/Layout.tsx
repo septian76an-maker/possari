@@ -18,7 +18,8 @@ import {
   ChevronDown,
   ChevronRight,
   History,
-  BarChart3
+  BarChart3,
+  QrCode
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -33,7 +34,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
   const navigate = useNavigate();
   const location = useLocation();
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(false);
-  const [openMenus, setOpenMenus] = React.useState<string[]>(['Voucher']);
+  const [openMenus, setOpenMenus] = React.useState<string[]>(['Voucher', 'Pengaturan']);
   const [tabs, setTabs] = React.useState<{ name: string; path: string }[]>([]);
 
   const toggleMenu = (name: string) => {
@@ -66,8 +67,25 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
 
   if (isAdmin) {
     menuItems.push({ name: 'Manajemen User', path: '/users', icon: UserCog });
-    menuItems.push({ name: 'Pengaturan', path: '/settings', icon: SettingsIcon });
+    menuItems.push({ 
+      name: 'Pengaturan', 
+      path: '/settings', 
+      icon: SettingsIcon,
+      subItems: [
+        { name: 'Pengaturan Umum', path: '/settings', icon: SettingsIcon },
+        { name: 'Pembayaran QRIS', path: '/settings/qris', icon: QrCode },
+      ]
+    });
   }
+
+  // Auto expand menu if on active sub-item
+  React.useEffect(() => {
+    if (location.pathname.startsWith('/settings')) {
+      setOpenMenus(prev => prev.includes('Pengaturan') ? prev : [...prev, 'Pengaturan']);
+    } else if (location.pathname.startsWith('/voucher')) {
+      setOpenMenus(prev => prev.includes('Voucher') ? prev : [...prev, 'Voucher']);
+    }
+  }, [location.pathname]);
 
   // Add tab when location changes
   React.useEffect(() => {

@@ -3,7 +3,8 @@ import { useParams } from 'react-router-dom';
 import { db, doc, getDoc, handleFirestoreError, OperationType } from '../firebase';
 import { Invoice, Client } from '../types';
 import { InvoiceView } from '../components/InvoiceView';
-import { Loader2, AlertCircle, Printer } from 'lucide-react';
+import { PublicPaymentSelector } from '../components/PublicPaymentSelector';
+import { Loader2, AlertCircle, Printer, CheckCircle2, Clock } from 'lucide-react';
 import { useSettings } from '../SettingsContext';
 
 export const PublicInvoice: React.FC = () => {
@@ -16,9 +17,9 @@ export const PublicInvoice: React.FC = () => {
 
   useEffect(() => {
     if (settings.appName) {
-      document.title = settings.appName;
+      document.title = `${settings.appName} - Invoice #${id ? id.slice(0, 8).toUpperCase() : ''}`;
     }
-  }, [settings.appName]);
+  }, [settings.appName, id]);
 
   useEffect(() => {
     const fetchInvoice = async () => {
@@ -67,18 +68,43 @@ export const PublicInvoice: React.FC = () => {
     );
   }
 
+  const isPaid = invoice.status === 'paid';
+
   return (
     <div className="min-h-screen bg-app-bg py-6 md:py-12 px-4 md:px-6">
-      <div className="max-w-4xl mx-auto mb-6 flex justify-end print:hidden">
+      {/* Top Action & Status Bar */}
+      <div className="max-w-4xl mx-auto mb-6 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 print:hidden">
+        <div className="flex items-center gap-3">
+          <div className={`px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 ${
+            isPaid 
+              ? 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/20' 
+              : 'bg-amber-500/10 text-amber-600 border border-amber-500/20'
+          }`}>
+            {isPaid ? <CheckCircle2 size={15} /> : <Clock size={15} />}
+            <span>{isPaid ? 'INVOICE SUDAH LUNAS' : 'MENUNGGU PEMBAYARAN'}</span>
+          </div>
+          <span className="text-xs text-app-text-muted font-mono">
+            #{invoice.id.slice(0, 8).toUpperCase()}
+          </span>
+        </div>
+
         <button 
           onClick={() => window.print()}
-          className="flex items-center gap-2 px-6 py-3 bg-app-primary text-white rounded-xl font-bold hover:opacity-90 transition-all shadow-lg shadow-app-primary/20"
+          className="flex items-center justify-center gap-2 px-5 py-2.5 bg-app-card hover:bg-app-border/40 border border-app-border text-app-text rounded-xl font-bold text-sm transition-all shadow-xs"
         >
-          <Printer size={18} />
-          Cetak Invoice
+          <Printer size={16} />
+          Cetak Dokumen
         </button>
       </div>
+
+      {/* Interactive Payment Method Dropdown & Dynamic QRIS Selector */}
+      <div className="max-w-4xl mx-auto">
+        <PublicPaymentSelector invoice={invoice} client={client || undefined} />
+      </div>
+
+      {/* Official Invoice Sheet */}
       <InvoiceView invoice={invoice} client={client || undefined} isPublic={true} />
+
       <div className="max-w-4xl mx-auto mt-8 text-center pb-8 print:hidden">
         <p className="text-xs text-app-text-muted uppercase tracking-widest font-bold">
           Diterbitkan oleh {settings.appName || 'Sistem Invoice'}
@@ -87,3 +113,4 @@ export const PublicInvoice: React.FC = () => {
     </div>
   );
 };
+

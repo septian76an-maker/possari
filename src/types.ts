@@ -85,6 +85,21 @@ export interface PrinterConfig {
   autoPrint?: boolean;
 }
 
+export interface QrisConfig {
+  enabled: boolean;
+  merchantName?: string;
+  nmid?: string;
+  qrisImage?: string;
+  qrisContent?: string;
+  showOnInvoice?: boolean;
+  showOnQuotation?: boolean;
+  showOnReceipt?: boolean;
+  instructions?: string;
+  apiEndpoint?: string;
+  secretApiKey?: string;
+  webhookUrl?: string;
+}
+
 export interface AppSettings {
   appName: string;
   appLogo: string;
@@ -94,6 +109,7 @@ export interface AppSettings {
   bankAccounts?: BankAccount[];
   theme?: 'default' | 'dark' | 'ocean';
   printerConfig?: PrinterConfig;
+  qrisConfig?: QrisConfig;
   footerNote?: string;
   quotationBeforeTable?: string;
   quotationAfterTable?: string;

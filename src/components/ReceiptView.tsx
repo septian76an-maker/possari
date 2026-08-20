@@ -1,4 +1,5 @@
 import React from 'react';
+import { QRCodeSVG } from 'qrcode.react';
 import { Invoice, Client } from '../types';
 import { useSettings } from '../SettingsContext';
 import { format } from 'date-fns';
@@ -83,8 +84,33 @@ export const ReceiptView: React.FC<ReceiptViewProps> = ({ invoice, client }) => 
         </div>
       </div>
 
+      {/* QRIS on Receipt */}
+      {settings.qrisConfig?.enabled && settings.qrisConfig?.showOnReceipt && (
+        <div className="text-center my-4 pt-3 border-t border-dashed border-black flex flex-col items-center">
+          <p className="font-bold text-[9px] uppercase tracking-wider mb-1">SCAN QRIS UNTUK BAYAR</p>
+          <div className="p-1 bg-white border border-black rounded inline-block">
+            {settings.qrisConfig.qrisImage ? (
+              <img 
+                src={settings.qrisConfig.qrisImage} 
+                alt="QRIS" 
+                className="w-24 h-24 object-contain mx-auto" 
+                referrerPolicy="no-referrer"
+              />
+            ) : settings.qrisConfig.qrisContent ? (
+              <QRCodeSVG value={settings.qrisConfig.qrisContent} size={90} />
+            ) : null}
+          </div>
+          {settings.qrisConfig.merchantName && (
+            <p className="text-[8px] font-bold mt-1">{settings.qrisConfig.merchantName}</p>
+          )}
+          {settings.qrisConfig.nmid && (
+            <p className="text-[7px]">NMID: {settings.qrisConfig.nmid}</p>
+          )}
+        </div>
+      )}
+
       {/* Footer */}
-      <div className="text-center mt-6 pt-4 border-t border-dashed border-black">
+      <div className="text-center mt-4 pt-3 border-t border-dashed border-black">
         <p className="font-bold uppercase mb-1 whitespace-pre-wrap">
           {settings.footerNote || 'Terima Kasih'}
         </p>

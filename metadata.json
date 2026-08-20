@@ -1,5 +1,6 @@
 {
   "name": "Sistem Invoice & Penawaran Digital",
-  "description": "Aplikasi manajemen penjualan jasa, klien, produk, invoice, dan penawaran dengan akses Admin/Kasir.",
-  "requestFramePermissions": []
+  "description": "Aplikasi manajemen penjualan jasa, klien, produk, invoice, penawaran, dan pembayaran QRIS dengan akses Admin/Kasir.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

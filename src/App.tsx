@@ -12,6 +12,7 @@ import { VoucherLogs } from './pages/VoucherLogs';
 import { VoucherStats } from './pages/VoucherStats';
 import { Users } from './pages/Users';
 import { Settings } from './pages/Settings';
+import { QrisSettings } from './pages/QrisSettings';
 import { PublicInvoice } from './pages/PublicInvoice';
 import { SettingsProvider, useSettings } from './SettingsContext';
 import { AlertCircle, Loader2 } from 'lucide-react';
@@ -109,6 +110,7 @@ export default function App() {
                 <Route path="/voucher-stats" element={<PrivateRoute><VoucherStats /></PrivateRoute>} />
                 <Route path="/users" element={<PrivateRoute><Users /></PrivateRoute>} />
                 <Route path="/settings" element={<PrivateRoute><Settings /></PrivateRoute>} />
+                <Route path="/settings/qris" element={<PrivateRoute><QrisSettings /></PrivateRoute>} />
                 
                 <Route path="*" element={<Navigate to="/" />} />
               </Routes>

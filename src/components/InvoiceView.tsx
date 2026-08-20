@@ -2,6 +2,7 @@ import React from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { Invoice, Client } from '../types';
 import { useSettings } from '../SettingsContext';
+import { generateDynamicQRIS } from '../utils/qris';
 import { format } from 'date-fns';
 import { id } from 'date-fns/locale';
 import { clsx } from 'clsx';
@@ -146,25 +147,79 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({ invoice, client, isPub
       )}
 
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-8">
-        <div className="text-neutral-400 text-[10px] sm:text-xs italic w-full sm:w-auto">
+        <div className="text-neutral-400 text-[10px] sm:text-xs italic w-full sm:w-auto flex-1">
           <p>{settings.footerNote || 'Terima kasih atas kepercayaan Anda.'}</p>
-          {invoice.type === 'invoice' && (
-            settings.bankAccounts && settings.bankAccounts.length > 0 ? (
-              <div className="mt-4 not-italic text-neutral-600 space-y-3">
-                <p className="font-bold text-neutral-900 uppercase tracking-widest text-[10px] mb-1">Informasi Pembayaran:</p>
-                <div className="grid grid-cols-1 gap-3">
-                  {settings.bankAccounts.map((acc, i) => (
-                    <div key={i} className="bg-neutral-50 p-3 rounded-lg border border-neutral-100">
-                      <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-tight">{acc.bankName}</p>
-                      <p className="font-mono text-sm font-bold text-neutral-900">{acc.accountNumber}</p>
-                      {acc.accountHolder && <p className="text-[10px] text-neutral-500 mt-1">a/n {acc.accountHolder}</p>}
+          
+          {/* Payment Info: Bank Accounts and/or QRIS */}
+          {((invoice.type === 'invoice') || (invoice.type === 'quotation' && settings.qrisConfig?.enabled && settings.qrisConfig?.showOnQuotation)) && (
+            <div className="mt-4 not-italic text-neutral-600 space-y-3">
+              <p className="font-bold text-neutral-900 uppercase tracking-widest text-[10px] mb-1">Informasi Pembayaran:</p>
+              
+              <div className="flex flex-col md:flex-row items-start gap-4">
+                {/* Bank Accounts */}
+                {settings.bankAccounts && settings.bankAccounts.length > 0 && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 flex-1 w-full">
+                    {settings.bankAccounts.map((acc, i) => (
+                      <div key={i} className="bg-neutral-50 p-3 rounded-lg border border-neutral-100">
+                        <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-tight">{acc.bankName}</p>
+                        <p className="font-mono text-sm font-bold text-neutral-900">{acc.accountNumber}</p>
+                        {acc.accountHolder && <p className="text-[10px] text-neutral-500 mt-1">a/n {acc.accountHolder}</p>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* QRIS Card */}
+                {settings.qrisConfig?.enabled && (
+                  (invoice.type === 'invoice' && settings.qrisConfig.showOnInvoice !== false) ||
+                  (invoice.type === 'quotation' && settings.qrisConfig.showOnQuotation)
+                ) && (
+                  <div className="bg-white p-3 rounded-xl border-2 border-neutral-200 shadow-xs flex items-center gap-3 shrink-0 max-w-sm">
+                    <div className="w-20 h-20 bg-white border border-neutral-200 rounded-lg p-1 flex items-center justify-center shrink-0">
+                      {settings.qrisConfig.qrisImage ? (
+                        <img 
+                          src={settings.qrisConfig.qrisImage} 
+                          alt="QRIS" 
+                          className="w-full h-full object-contain"
+                          referrerPolicy="no-referrer"
+                        />
+                      ) : (
+                        <QRCodeSVG 
+                          value={settings.qrisConfig.qrisContent || generateDynamicQRIS({
+                            merchantName: settings.qrisConfig.merchantName || settings.appName,
+                            nmid: settings.qrisConfig.nmid,
+                            invoiceId: invoice.id,
+                            amount: invoice.total,
+                            city: 'JAKARTA'
+                          })} 
+                          size={72} 
+                          level="M" 
+                        />
+                      )}
                     </div>
-                  ))}
-                </div>
+                    <div className="text-left space-y-0.5">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-black text-red-600">QRIS</span>
+                        <span className="text-[8px] bg-red-600 text-white font-bold px-1 rounded">GPN</span>
+                      </div>
+                      <p className="text-xs font-bold text-neutral-900 leading-tight">
+                        {settings.qrisConfig.merchantName || settings.appName}
+                      </p>
+                      {settings.qrisConfig.nmid && (
+                        <p className="text-[9px] font-mono text-neutral-500">NMID: {settings.qrisConfig.nmid}</p>
+                      )}
+                      <p className="text-[8px] text-neutral-500 leading-tight line-clamp-2 max-w-[180px]">
+                        {settings.qrisConfig.instructions || 'Scan QRIS via e-Wallet / M-Banking'}
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
-            ) : (
-              <p className="mt-2">Pembayaran dapat dilakukan melalui Transfer Bank yang telah disepakati.</p>
-            )
+
+              {!settings.bankAccounts?.length && !settings.qrisConfig?.enabled && (
+                <p className="mt-2">Pembayaran dapat dilakukan melalui Transfer Bank yang telah disepakati.</p>
+              )}
+            </div>
           )}
         </div>
         
