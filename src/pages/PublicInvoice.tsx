@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { db, doc, getDoc, handleFirestoreError, OperationType } from '../firebase';
+import { db, doc, getDoc, onSnapshot, updateDoc, handleFirestoreError, OperationType } from '../firebase';
 import { Invoice, Client } from '../types';
 import { InvoiceView } from '../components/InvoiceView';
 import { PublicPaymentSelector } from '../components/PublicPaymentSelector';
+import { PaymentSuccessModal } from '../components/PaymentSuccessModal';
 import { Loader2, AlertCircle, Printer, CheckCircle2, Clock } from 'lucide-react';
 import { useSettings } from '../SettingsContext';
 
@@ -14,6 +15,14 @@ export const PublicInvoice: React.FC = () => {
   const [client, setClient] = useState<Client | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
+  // Payment Success Popup State
+  const [isSuccessModalOpen, setIsSuccessModalOpen] = useState(false);
+  const [successPaymentData, setSuccessPaymentData] = useState<{
+    transactionId?: string;
+    paymentSource?: string;
+    paidAt?: string;
+  } | null>(null);
 
   useEffect(() => {
     if (settings.appName) {
@@ -22,31 +31,73 @@ export const PublicInvoice: React.FC = () => {
   }, [settings.appName, id]);
 
   useEffect(() => {
-    const fetchInvoice = async () => {
-      if (!id) return;
-      try {
-        const invSnap = await getDoc(doc(db, 'invoices', id));
-        if (invSnap.exists()) {
-          const invData = { id: invSnap.id, ...invSnap.data() } as Invoice;
-          setInvoice(invData);
-          
-          const clientSnap = await getDoc(doc(db, 'clients', invData.clientId));
-          if (clientSnap.exists()) {
-            setClient({ id: clientSnap.id, ...clientSnap.data() } as Client);
-          }
-        } else {
-          setError('Invoice tidak ditemukan.');
-        }
-      } catch (err) {
-        setError('Gagal memuat invoice.');
-        handleFirestoreError(err, OperationType.GET, `invoices/${id}`);
-      } finally {
-        setLoading(false);
-      }
-    };
+    if (!id) return;
 
-    fetchInvoice();
+    let isInitialLoad = true;
+
+    // Real-time listener for Firestore invoice document
+    const unsub = onSnapshot(doc(db, 'invoices', id), async (docSnap) => {
+      if (docSnap.exists()) {
+        const invData = { id: docSnap.id, ...docSnap.data() } as Invoice;
+        
+        // If status changed to paid from external update
+        if (!isInitialLoad && invData.status === 'paid' && invoice?.status !== 'paid') {
+          setSuccessPaymentData({
+            transactionId: invData.id,
+            paymentSource: 'QRIS Dinamis',
+            paidAt: invData.paidAt || new Date().toISOString()
+          });
+          setIsSuccessModalOpen(true);
+        }
+
+        setInvoice(invData);
+
+        if (invData.clientId && (!client || client.id !== invData.clientId)) {
+          try {
+            const clientSnap = await getDoc(doc(db, 'clients', invData.clientId));
+            if (clientSnap.exists()) {
+              setClient({ id: clientSnap.id, ...clientSnap.data() } as Client);
+            }
+          } catch {
+            // Silently handle client load
+          }
+        }
+      } else {
+        setError('Invoice tidak ditemukan.');
+      }
+      setLoading(false);
+      isInitialLoad = false;
+    }, (err) => {
+      console.error("Firestore onSnapshot error:", err);
+      setError('Gagal memuat invoice.');
+      setLoading(false);
+    });
+
+    return () => unsub();
   }, [id]);
+
+  const handlePaymentSuccess = async (payment: {
+    transactionId?: string;
+    paymentSource?: string;
+    paidAt?: string;
+  }) => {
+    setSuccessPaymentData(payment);
+    setIsSuccessModalOpen(true);
+
+    // Update local state and Firestore if not already paid
+    if (invoice && invoice.status !== 'paid' && id) {
+      setInvoice(prev => prev ? { ...prev, status: 'paid', paidAt: payment.paidAt || new Date().toISOString() } : null);
+      try {
+        await updateDoc(doc(db, 'invoices', id), {
+          status: 'paid',
+          paidAt: payment.paidAt || new Date().toISOString(),
+          paymentMethod: payment.paymentSource || 'QRIS Dinamis'
+        });
+      } catch (e) {
+        console.warn("Could not update invoice in firestore directly (client permission):", e);
+      }
+    }
+  };
 
   if (loading) {
     return (
@@ -99,7 +150,11 @@ export const PublicInvoice: React.FC = () => {
 
       {/* Interactive Payment Method Dropdown & Dynamic QRIS Selector */}
       <div className="max-w-4xl mx-auto">
-        <PublicPaymentSelector invoice={invoice} client={client || undefined} />
+        <PublicPaymentSelector 
+          invoice={invoice} 
+          client={client || undefined} 
+          onPaymentSuccess={handlePaymentSuccess}
+        />
       </div>
 
       {/* Official Invoice Sheet */}
@@ -110,6 +165,18 @@ export const PublicInvoice: React.FC = () => {
           Diterbitkan oleh {settings.appName || 'Sistem Invoice'}
         </p>
       </div>
+
+      {/* Pop-up Modal Webhook Transaksi Berhasil */}
+      {invoice && (
+        <PaymentSuccessModal
+          isOpen={isSuccessModalOpen}
+          onClose={() => setIsSuccessModalOpen(false)}
+          invoice={invoice}
+          transactionId={successPaymentData?.transactionId}
+          paymentSource={successPaymentData?.paymentSource}
+          paidAt={successPaymentData?.paidAt}
+        />
+      )}
     </div>
   );
 };

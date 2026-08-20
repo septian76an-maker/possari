@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { Invoice, Client } from '../types';
 import { useSettings } from '../SettingsContext';
-import { generateDynamicQRIS } from '../utils/qris';
+import { generateDynamicQRIS, convertStaticQRISToDynamic } from '../utils/qris';
 import { 
   QrCode, 
   Building2, 
@@ -26,6 +26,11 @@ import {
 interface PublicPaymentSelectorProps {
   invoice: Invoice;
   client?: Client;
+  onPaymentSuccess?: (payment: {
+    transactionId?: string;
+    paymentSource?: string;
+    paidAt?: string;
+  }) => void;
 }
 
 export type PaymentMethodType = 'qris' | 'bank_transfer' | 'all';
@@ -38,6 +43,7 @@ interface ServerQrisResponse {
   qrisContent?: string;
   qrImageUrl?: string;
   merchantName?: string;
+  nmid?: string;
   formattedAmount?: string;
   expiresAt?: string;
   latencyMs?: number;
@@ -47,7 +53,7 @@ interface ServerQrisResponse {
   hint?: string;
 }
 
-export const PublicPaymentSelector: React.FC<PublicPaymentSelectorProps> = ({ invoice, client }) => {
+export const PublicPaymentSelector: React.FC<PublicPaymentSelectorProps> = ({ invoice, client, onPaymentSuccess }) => {
   const { settings } = useSettings();
   
   const isQrisAvailable = settings.qrisConfig?.enabled !== false;
@@ -70,14 +76,33 @@ export const PublicPaymentSelector: React.FC<PublicPaymentSelectorProps> = ({ in
   const [qrisError, setQrisError] = useState<string | null>(null);
   const [serverQris, setServerQris] = useState<ServerQrisResponse | null>(null);
   const qrRef = useRef<SVGSVGElement>(null);
+  
+  // Real-time Webhook Polling & Manual Check State
+  const [isCheckingStatus, setIsCheckingStatus] = useState<boolean>(false);
+  const [checkStatusMessage, setCheckStatusMessage] = useState<string | null>(null);
+  
+  // Guard refs to prevent duplicate API calls
+  const inFlightRef = useRef<boolean>(false);
+  const lastFetchedKeyRef = useRef<string>('');
+  const paymentTriggeredRef = useRef<boolean>(false);
 
-  const merchantName = settings.qrisConfig?.merchantName || settings.appName || 'SEPTIAN NETWORK';
-  const nmid = settings.qrisConfig?.nmid || 'ID102003849102';
+  const fallbackMerchantName = settings.qrisConfig?.merchantName || settings.appName || 'SEPTIAN NETWORK';
+  const fallbackNmid = settings.qrisConfig?.nmid || 'ID102003849102';
+
+  const effectiveMerchantName = serverQris?.merchantName || fallbackMerchantName;
+  const effectiveNmid = serverQris?.nmid || fallbackNmid;
 
   // Fetch QRIS from connected QRIS API Server via proxy
-  const fetchQrisFromServer = useCallback(async () => {
+  const fetchQrisFromServer = useCallback(async (forceRefresh = false) => {
     if (invoice.status === 'paid' || invoice.total <= 0) return;
 
+    const requestKey = `${invoice.id}-${invoice.total}-${settings.qrisConfig?.apiEndpoint}`;
+    if (!forceRefresh && (inFlightRef.current || lastFetchedKeyRef.current === requestKey)) {
+      return;
+    }
+
+    inFlightRef.current = true;
+    lastFetchedKeyRef.current = requestKey;
     setIsLoadingQris(true);
     setQrisError(null);
 
@@ -101,8 +126,9 @@ export const PublicPaymentSelector: React.FC<PublicPaymentSelectorProps> = ({ in
             order_id: invoice.id,
             clientName: client?.name || invoice.clientName || 'Pelanggan',
             customer_name: client?.name || invoice.clientName || 'Pelanggan',
-            merchantName: merchantName,
-            nmid: nmid,
+            merchantName: fallbackMerchantName,
+            merchant_name: fallbackMerchantName,
+            nmid: fallbackNmid,
             expireMinutes: 30,
             webhookUrl: settings.qrisConfig?.webhookUrl || '',
             description: `Pembayaran Invoice #${invoice.id.slice(0, 8).toUpperCase()}`
@@ -132,8 +158,8 @@ export const PublicPaymentSelector: React.FC<PublicPaymentSelectorProps> = ({ in
       
       // Fallback local calculation so user can still pay if offline
       const fallbackPayload = generateDynamicQRIS({
-        merchantName,
-        nmid,
+        merchantName: fallbackMerchantName,
+        nmid: fallbackNmid,
         invoiceId: invoice.id,
         amount: invoice.total,
         city: 'JAKARTA'
@@ -143,19 +169,85 @@ export const PublicPaymentSelector: React.FC<PublicPaymentSelectorProps> = ({ in
         mode: 'INTERNAL_LOCAL',
         qrisContent: fallbackPayload,
         transactionId: `TX-${invoice.id.slice(0, 8).toUpperCase()}`,
-        merchantName: merchantName
+        merchantName: fallbackMerchantName,
+        nmid: fallbackNmid
       });
     } finally {
+      inFlightRef.current = false;
       setIsLoadingQris(false);
     }
-  }, [invoice.id, invoice.total, invoice.status, invoice.clientName, client?.name, merchantName, nmid, settings.qrisConfig]);
+  }, [invoice.id, invoice.total, invoice.status, invoice.clientName, client?.name, fallbackMerchantName, fallbackNmid, settings.qrisConfig?.apiEndpoint, settings.qrisConfig?.secretApiKey, settings.qrisConfig?.webhookUrl]);
 
   // Initial trigger when QRIS method is active
   useEffect(() => {
     if (isQrisAvailable && invoice.status !== 'paid') {
-      fetchQrisFromServer();
+      fetchQrisFromServer(false);
     }
   }, [fetchQrisFromServer, isQrisAvailable, invoice.status]);
+
+  // Active Polling for Payment Webhook Status
+  useEffect(() => {
+    if (invoice.status === 'paid') return;
+
+    let isSubscribed = true;
+    const interval = setInterval(async () => {
+      if (paymentTriggeredRef.current || !isSubscribed) return;
+
+      try {
+        const txIdParam = serverQris?.transactionId ? `&txId=${encodeURIComponent(serverQris.transactionId)}` : '';
+        const response = await fetch(`/api/qris/payment-status/${encodeURIComponent(invoice.id)}?amount=${invoice.total}${txIdParam}`);
+        if (!response.ok) return;
+        const data = await response.json();
+
+        if (data.isPaid && isSubscribed && !paymentTriggeredRef.current) {
+          paymentTriggeredRef.current = true;
+          clearInterval(interval);
+          onPaymentSuccess?.({
+            transactionId: data.payment?.transactionId || serverQris?.transactionId || invoice.id,
+            paymentSource: data.payment?.paymentSource || 'QRIS Dinamis',
+            paidAt: data.payment?.paidAt || new Date().toISOString()
+          });
+        }
+      } catch {
+        // Silently ignore background poll errors
+      }
+    }, 2500);
+
+    return () => {
+      isSubscribed = false;
+      clearInterval(interval);
+    };
+  }, [invoice.id, invoice.total, invoice.status, serverQris?.transactionId, onPaymentSuccess]);
+
+  // Manual payment verification check
+  const checkPaymentStatusManually = async () => {
+    setIsCheckingStatus(true);
+    setCheckStatusMessage(null);
+
+    try {
+      const txIdParam = serverQris?.transactionId ? `&txId=${encodeURIComponent(serverQris.transactionId)}` : '';
+      const response = await fetch(`/api/qris/payment-status/${encodeURIComponent(invoice.id)}?amount=${invoice.total}${txIdParam}`);
+      const data = await response.json();
+
+      if (data.isPaid) {
+        setCheckStatusMessage('Pembayaran BERHASIL terverifikasi!');
+        paymentTriggeredRef.current = true;
+        onPaymentSuccess?.({
+          transactionId: data.payment?.transactionId || serverQris?.transactionId || invoice.id,
+          paymentSource: data.payment?.paymentSource || 'QRIS Dinamis',
+          paidAt: data.payment?.paidAt || new Date().toISOString()
+        });
+      } else {
+        setCheckStatusMessage('Belum ada data pembayaran masuk. Pastikan Anda telah menuntaskan transaksi di aplikasi e-Wallet atau Mobile Banking.');
+        setTimeout(() => setCheckStatusMessage(null), 5000);
+      }
+    } catch {
+      setCheckStatusMessage('Gagal memeriksa status pembayaran. Silakan coba lagi.');
+      setTimeout(() => setCheckStatusMessage(null), 5000);
+    } finally {
+      setIsCheckingStatus(false);
+    }
+  };
 
   // Expiry countdown timer
   useEffect(() => {
@@ -229,11 +321,11 @@ export const PublicPaymentSelector: React.FC<PublicPaymentSelectorProps> = ({ in
 
         ctx.fillStyle = '#111827';
         ctx.font = 'bold 22px sans-serif';
-        ctx.fillText(serverQris?.merchantName || merchantName, canvas.width / 2, 530);
+        ctx.fillText(effectiveMerchantName, canvas.width / 2, 530);
 
         ctx.fillStyle = '#4B5563';
         ctx.font = '16px monospace';
-        ctx.fillText(`NMID: ${nmid}`, canvas.width / 2, 560);
+        ctx.fillText(`NMID: ${effectiveNmid}`, canvas.width / 2, 560);
 
         ctx.fillStyle = '#059669';
         ctx.font = 'bold 26px sans-serif';
@@ -261,13 +353,15 @@ export const PublicPaymentSelector: React.FC<PublicPaymentSelectorProps> = ({ in
   );
   const waUrl = `https://wa.me/${waPhone}?text=${waMessage}`;
 
-  const currentQrisPayload = serverQris?.qrisContent || generateDynamicQRIS({
-    merchantName,
-    nmid,
-    invoiceId: invoice.id,
-    amount: invoice.total,
-    city: 'JAKARTA'
-  });
+  const currentQrisPayload = serverQris?.qrisContent || 
+    (settings.qrisConfig?.qrisContent ? convertStaticQRISToDynamic(settings.qrisConfig.qrisContent, invoice.total, invoice.id) : '') ||
+    generateDynamicQRIS({
+      merchantName: effectiveMerchantName,
+      nmid: effectiveNmid,
+      invoiceId: invoice.id,
+      amount: invoice.total,
+      city: 'JAKARTA'
+    });
 
   return (
     <div id="payment-method-section" className="mb-8 print:hidden">
@@ -443,10 +537,10 @@ export const PublicPaymentSelector: React.FC<PublicPaymentSelectorProps> = ({ in
                   {/* Merchant Details in QR Box */}
                   <div className="w-full mt-2 pt-2 border-t border-neutral-100 text-center">
                     <p className="text-xs font-bold text-neutral-900 truncate">
-                      {serverQris?.merchantName || merchantName}
+                      {effectiveMerchantName}
                     </p>
                     <p className="text-[10px] font-mono text-neutral-500">
-                      NMID: {nmid}
+                      NMID: {effectiveNmid}
                     </p>
                     <div className="mt-1.5 inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-md text-[10px] font-black">
                       <CheckCircle2 size={11} />
@@ -536,13 +630,23 @@ export const PublicPaymentSelector: React.FC<PublicPaymentSelectorProps> = ({ in
                     <li>Buka aplikasi Mobile Banking atau e-Wallet favorit Anda.</li>
                     <li>Pilih menu <strong className="text-app-text">Bayar / Scan QRIS</strong>.</li>
                     <li>Arahkan kamera ke kode QR di atas (atau pilih dari galeri jika diunduh).</li>
-                    <li>Periksa nama penerima <strong className="text-app-text">{serverQris?.merchantName || merchantName}</strong> dan nominal <strong className="text-app-text">Rp {invoice.total.toLocaleString('id-ID')}</strong>.</li>
+                    <li>Periksa nama penerima <strong className="text-app-text">{effectiveMerchantName}</strong> dan nominal <strong className="text-app-text">Rp {invoice.total.toLocaleString('id-ID')}</strong>.</li>
                     <li>Konfirmasi dan masukkan PIN Anda untuk menyelesaikan pembayaran.</li>
                   </ol>
                 </div>
 
                 {/* Action Buttons */}
                 <div className="flex flex-wrap items-center gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={checkPaymentStatusManually}
+                    disabled={isCheckingStatus || invoice.status === 'paid'}
+                    className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm disabled:opacity-50"
+                  >
+                    <RefreshCw size={15} className={isCheckingStatus ? 'animate-spin' : ''} />
+                    {isCheckingStatus ? 'Memeriksa...' : 'Cek Status Pembayaran'}
+                  </button>
+
                   <button
                     type="button"
                     onClick={downloadQRCode}
@@ -575,6 +679,14 @@ export const PublicPaymentSelector: React.FC<PublicPaymentSelectorProps> = ({ in
                     {copiedQrisString ? 'Data Tersalin' : 'Salin Data QR'}
                   </button>
                 </div>
+                
+                {/* Manual Check Result Message */}
+                {checkStatusMessage && (
+                  <div className={`mt-2 p-3 rounded-xl text-xs font-bold border flex items-center gap-2 ${checkStatusMessage.includes('BERHASIL') ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20' : checkStatusMessage.includes('Gagal') ? 'bg-red-500/10 text-red-600 border-red-500/20' : 'bg-amber-500/10 text-amber-700 border-amber-500/20'}`}>
+                    {checkStatusMessage.includes('BERHASIL') ? <CheckCircle2 size={16} /> : checkStatusMessage.includes('Gagal') ? <AlertCircle size={16} /> : <Clock size={16} />}
+                    {checkStatusMessage}
+                  </div>
+                )}
 
               </div>
             </div>

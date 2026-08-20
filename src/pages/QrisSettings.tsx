@@ -6,35 +6,28 @@ import { QRCodeSVG } from 'qrcode.react';
 import { 
   Save, 
   QrCode, 
-  Building2, 
-  Image as ImageIcon, 
   CheckCircle2, 
   Trash2, 
   Settings as SettingsIcon, 
   ShieldCheck, 
-  Smartphone, 
-  FileCheck2,
-  UploadCloud,
-  Eye,
-  Info,
-  Key,
-  Globe,
-  Radio,
-  Send,
-  Copy,
-  Check,
-  RefreshCw,
-  Play,
-  Terminal,
-  Code2,
-  CheckCheck,
-  AlertCircle,
-  Clock,
-  Sparkles,
-  ExternalLink,
-  ChevronRight,
-  Zap,
-  Server
+  Key, 
+  Globe, 
+  Radio, 
+  Send, 
+  Copy, 
+  Check, 
+  RefreshCw, 
+  Play, 
+  Terminal, 
+  Code2, 
+  CheckCheck, 
+  AlertCircle, 
+  Clock, 
+  Sparkles, 
+  ExternalLink, 
+  ChevronRight, 
+  Zap, 
+  Server 
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { QrisConfig } from '../types';
@@ -78,7 +71,6 @@ export const QrisSettings: React.FC = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [successMessage, setSuccessMessage] = useState('Pengaturan QRIS berhasil disimpan!');
-  const [isProcessingImage, setIsProcessingImage] = useState(false);
 
   // Simulation: Generate QRIS State
   const [simAmount, setSimAmount] = useState<number>(150000);
@@ -102,7 +94,7 @@ export const QrisSettings: React.FC = () => {
   const [webhookLogs, setWebhookLogs] = useState<WebhookLog[]>([]);
   const [isLoadingLogs, setIsLoadingLogs] = useState<boolean>(false);
 
-  const defaultWebhookUrl = typeof window !== 'undefined' ? `${window.location.origin}/api/qris/webhook` : '/api/qris/webhook';
+  const defaultWebhookUrl = typeof window !== 'undefined' ? `${window.location.origin}/api/qris/payment-callback` : '/api/qris/payment-callback';
 
   const copyToClipboard = (text: string, fieldId: string) => {
     navigator.clipboard.writeText(text);
@@ -135,49 +127,6 @@ export const QrisSettings: React.FC = () => {
     } finally {
       setIsSaving(false);
     }
-  };
-
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setIsProcessingImage(true);
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const MAX_SIZE = 800;
-        let width = img.width;
-        let height = img.height;
-
-        if (width > height) {
-          if (width > MAX_SIZE) {
-            height *= MAX_SIZE / width;
-            width = MAX_SIZE;
-          }
-        } else {
-          if (height > MAX_SIZE) {
-            width *= MAX_SIZE / height;
-            height = MAX_SIZE;
-          }
-        }
-
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.imageSmoothingEnabled = true;
-          ctx.imageSmoothingQuality = 'high';
-          ctx.drawImage(img, 0, 0, width, height);
-          const base64 = canvas.toDataURL('image/png');
-          setQrisData(prev => ({ ...prev, qrisImage: base64 }));
-        }
-        setIsProcessingImage(false);
-      };
-      img.src = event.target?.result as string;
-    };
-    reader.readAsDataURL(file);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -327,18 +276,6 @@ export const QrisSettings: React.FC = () => {
       </div>
     );
   }
-
-  const supportedApps = [
-    { name: 'BCA', color: 'bg-blue-700 text-white' },
-    { name: 'Mandiri', color: 'bg-yellow-600 text-white' },
-    { name: 'BRI', color: 'bg-blue-600 text-white' },
-    { name: 'BNI', color: 'bg-orange-600 text-white' },
-    { name: 'GoPay', color: 'bg-emerald-600 text-white' },
-    { name: 'OVO', color: 'bg-purple-700 text-white' },
-    { name: 'DANA', color: 'bg-sky-500 text-white' },
-    { name: 'ShopeePay', color: 'bg-amber-600 text-white' },
-    { name: 'LinkAja', color: 'bg-red-600 text-white' },
-  ];
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
@@ -604,294 +541,6 @@ export const QrisSettings: React.FC = () => {
                 <p className="text-[11px] text-app-text-muted">
                   URL untuk menerima notifikasi status transaksi otomatis saat pelanggan berhasil membayar.
                 </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Form Grid: Merchant Info & Document Placement */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            <div className="lg:col-span-7 space-y-6">
-              {/* Merchant Details Card */}
-              <div className="bg-app-card rounded-2xl border border-app-border p-6 space-y-5 shadow-sm">
-                <h3 className="text-xs font-black text-app-text uppercase tracking-widest border-b border-app-border/50 pb-3 flex items-center gap-2">
-                  <Building2 size={16} className="text-app-primary" />
-                  Identitas Merchant QRIS
-                </h3>
-
-                <div>
-                  <label className="block text-xs font-bold text-app-text-muted uppercase mb-2 tracking-widest">
-                    Nama Merchant / Toko (Sesuai QRIS)
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Contoh: SEPTIAN NETWORK"
-                    className="w-full px-4 py-3 bg-app-bg border border-app-border rounded-xl focus:ring-2 focus:ring-app-primary transition-all text-app-text text-sm font-semibold"
-                    value={qrisData.merchantName || ''}
-                    onChange={(e) => setQrisData(prev => ({ ...prev, merchantName: e.target.value }))}
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-app-text-muted uppercase mb-2 tracking-widest">
-                    NMID (National Merchant ID - Opsional)
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Contoh: ID102003849102"
-                    className="w-full px-4 py-3 bg-app-bg border border-app-border rounded-xl focus:ring-2 focus:ring-app-primary transition-all text-app-text text-sm font-mono"
-                    value={qrisData.nmid || ''}
-                    onChange={(e) => setQrisData(prev => ({ ...prev, nmid: e.target.value }))}
-                  />
-                </div>
-              </div>
-
-              {/* Barcode Image & Payload Card */}
-              <div className="bg-app-card rounded-2xl border border-app-border p-6 space-y-5 shadow-sm">
-                <h3 className="text-xs font-black text-app-text uppercase tracking-widest border-b border-app-border/50 pb-3 flex items-center gap-2">
-                  <QrCode size={16} className="text-app-primary" />
-                  Foto Barcode QRIS & String Payload
-                </h3>
-
-                <div>
-                  <label className="block text-xs font-bold text-app-text-muted uppercase mb-2 tracking-widest">
-                    Upload Foto Barcode QRIS (PNG/JPG)
-                  </label>
-                  <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
-                    <div className="w-28 h-28 bg-white rounded-2xl border-2 border-dashed border-app-border flex items-center justify-center overflow-hidden relative group shrink-0 shadow-inner">
-                      {qrisData.qrisImage ? (
-                        <>
-                          <img 
-                            src={qrisData.qrisImage} 
-                            alt="QRIS Barcode" 
-                            className="w-full h-full object-contain p-2" 
-                            referrerPolicy="no-referrer"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => setQrisData(prev => ({ ...prev, qrisImage: '' }))}
-                            className="absolute inset-0 bg-red-950/70 text-white opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-1 text-xs font-bold"
-                          >
-                            <Trash2 size={18} />
-                            Hapus
-                          </button>
-                        </>
-                      ) : (
-                        <div className="text-center p-2">
-                          <QrCode size={32} className="mx-auto text-neutral-300 mb-1" />
-                          <span className="text-[9px] text-neutral-400 font-bold block">Kosong</span>
-                        </div>
-                      )}
-                      {isProcessingImage && (
-                        <div className="absolute inset-0 bg-white/90 flex items-center justify-center">
-                          <div className="w-6 h-6 border-2 border-app-primary border-t-transparent rounded-full animate-spin" />
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="flex-1 space-y-2">
-                      <label className="inline-flex items-center gap-2 bg-app-primary text-white px-4 py-2.5 rounded-xl text-xs font-bold cursor-pointer hover:opacity-90 transition-all shadow-sm">
-                        <UploadCloud size={16} />
-                        Pilih Gambar QRIS
-                        <input 
-                          type="file" 
-                          className="hidden" 
-                          accept="image/png, image/jpeg, image/jpg, image/webp" 
-                          onChange={handleImageUpload} 
-                        />
-                      </label>
-                      <p className="text-[11px] text-app-text-muted leading-relaxed">
-                        Unggah barcode QRIS statis merchant Anda. Otomatis dikompresi agar jernih saat cetak.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="pt-2 border-t border-app-border/40">
-                  <label className="block text-xs font-bold text-app-text-muted uppercase tracking-widest mb-1.5">
-                    Kode String Payload QRIS (EMVCo - Opsional)
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="00020101021126590014ID.LINKAJA.WWW0118..."
-                    className="w-full px-4 py-2.5 bg-app-bg border border-app-border rounded-xl focus:ring-2 focus:ring-app-primary transition-all text-app-text text-xs font-mono"
-                    value={qrisData.qrisContent || ''}
-                    onChange={(e) => setQrisData(prev => ({ ...prev, qrisContent: e.target.value }))}
-                  />
-                </div>
-              </div>
-
-              {/* Document Display Placement */}
-              <div className="bg-app-card rounded-2xl border border-app-border p-6 space-y-4 shadow-sm">
-                <h3 className="text-xs font-black text-app-text uppercase tracking-widest border-b border-app-border/50 pb-3 flex items-center gap-2">
-                  <FileCheck2 size={16} className="text-app-primary" />
-                  Penempatan QRIS pada Dokumen
-                </h3>
-
-                <div className="space-y-3">
-                  <label className="flex items-start gap-3 p-3.5 bg-app-bg rounded-xl border border-app-border cursor-pointer hover:border-app-primary/50 transition-all">
-                    <input
-                      type="checkbox"
-                      checked={qrisData.showOnInvoice ?? false}
-                      onChange={(e) => setQrisData(prev => ({ ...prev, showOnInvoice: e.target.checked }))}
-                      className="mt-0.5 w-4 h-4 rounded border-app-border text-app-primary focus:ring-app-primary"
-                    />
-                    <div>
-                      <span className="font-bold text-sm text-app-text block">Tampilkan pada Lembar Invoice</span>
-                      <span className="text-xs text-app-text-muted block mt-0.5">
-                        Menampilkan barcode pembayaran QRIS pada tagihan resmi dan invoice link online.
-                      </span>
-                    </div>
-                  </label>
-
-                  <label className="flex items-start gap-3 p-3.5 bg-app-bg rounded-xl border border-app-border cursor-pointer hover:border-app-primary/50 transition-all">
-                    <input
-                      type="checkbox"
-                      checked={qrisData.showOnQuotation ?? false}
-                      onChange={(e) => setQrisData(prev => ({ ...prev, showOnQuotation: e.target.checked }))}
-                      className="mt-0.5 w-4 h-4 rounded border-app-border text-app-primary focus:ring-app-primary"
-                    />
-                    <div>
-                      <span className="font-bold text-sm text-app-text block">Tampilkan pada Lembar Penawaran (Quotation)</span>
-                      <span className="text-xs text-app-text-muted block mt-0.5">
-                        Menampilkan QRIS untuk kemudahan pembayaran uang muka (DP) pada penawaran harga.
-                      </span>
-                    </div>
-                  </label>
-
-                  <label className="flex items-start gap-3 p-3.5 bg-app-bg rounded-xl border border-app-border cursor-pointer hover:border-app-primary/50 transition-all">
-                    <input
-                      type="checkbox"
-                      checked={qrisData.showOnReceipt ?? false}
-                      onChange={(e) => setQrisData(prev => ({ ...prev, showOnReceipt: e.target.checked }))}
-                      className="mt-0.5 w-4 h-4 rounded border-app-border text-app-primary focus:ring-app-primary"
-                    />
-                    <div>
-                      <span className="font-bold text-sm text-app-text block">Tampilkan pada Struk Kasir (Thermal Receipt)</span>
-                      <span className="text-xs text-app-text-muted block mt-0.5">
-                        Mencetak barcode QRIS pada struk kasir thermal 58mm / 80mm.
-                      </span>
-                    </div>
-                  </label>
-                </div>
-              </div>
-
-              {/* Instructions */}
-              <div className="bg-app-card rounded-2xl border border-app-border p-6 space-y-3 shadow-sm">
-                <h3 className="text-xs font-black text-app-text uppercase tracking-widest border-b border-app-border/50 pb-3 flex items-center gap-2">
-                  <Info size={16} className="text-app-primary" />
-                  Petunjuk Pembayaran QRIS
-                </h3>
-                <textarea
-                  rows={2}
-                  placeholder="Scan QRIS menggunakan BCA, Mandiri, BRI, BNI, GoPay, OVO, DANA, ShopeePay..."
-                  className="w-full px-4 py-3 bg-app-bg border border-app-border rounded-xl focus:ring-2 focus:ring-app-primary transition-all text-app-text text-xs"
-                  value={qrisData.instructions || ''}
-                  onChange={(e) => setQrisData(prev => ({ ...prev, instructions: e.target.value }))}
-                />
-              </div>
-            </div>
-
-            {/* Live Preview Column (5 cols) */}
-            <div className="lg:col-span-5 space-y-6">
-              <div className="bg-app-card rounded-2xl border border-app-border p-6 space-y-5 shadow-sm sticky top-6">
-                <div className="flex items-center justify-between border-b border-app-border/50 pb-3">
-                  <h3 className="text-xs font-black text-app-text uppercase tracking-widest flex items-center gap-2">
-                    <Eye size={16} className="text-app-primary" />
-                    Pratinjau QRIS Real-time
-                  </h3>
-                  <span className="text-[10px] font-bold px-2 py-0.5 bg-red-600/10 text-red-600 rounded">
-                    Live Preview
-                  </span>
-                </div>
-
-                {/* QRIS Official Card Preview */}
-                <div className="bg-white text-neutral-900 rounded-2xl p-6 border-2 border-neutral-200 shadow-md flex flex-col items-center text-center space-y-4">
-                  <div className="w-full flex items-center justify-between border-b-2 border-neutral-900 pb-3">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-xl font-black tracking-tighter text-red-600">QRIS</span>
-                      <span className="text-[8px] font-bold tracking-widest text-neutral-500 uppercase leading-none text-left">
-                        Quick Response Code<br />Indonesian Standard
-                      </span>
-                    </div>
-                    <span className="text-[10px] font-black tracking-wider bg-red-600 text-white px-2 py-0.5 rounded">
-                      GPN
-                    </span>
-                  </div>
-
-                  <div className="w-full">
-                    <h4 className="font-black text-base uppercase text-neutral-900 tracking-tight">
-                      {qrisData.merchantName || settings.appName || 'NAMA MERCHANT'}
-                    </h4>
-                    {qrisData.nmid && (
-                      <p className="text-[11px] font-mono text-neutral-500 font-bold mt-0.5">
-                        NMID: {qrisData.nmid}
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="p-3 bg-white border-2 border-neutral-900 rounded-xl shadow-sm flex items-center justify-center w-44 h-44">
-                    {qrisData.qrisImage ? (
-                      <img 
-                        src={qrisData.qrisImage} 
-                        alt="QRIS Preview" 
-                        className="w-full h-full object-contain"
-                        referrerPolicy="no-referrer"
-                      />
-                    ) : qrisData.qrisContent ? (
-                      <QRCodeSVG value={qrisData.qrisContent} size={150} level="M" />
-                    ) : (
-                      <div className="text-neutral-400 text-center p-2">
-                        <QrCode size={40} className="mx-auto mb-1 text-neutral-300" />
-                        <p className="text-[9px] font-semibold">Upload gambar atau generate via API</p>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="w-full pt-2 border-t border-neutral-100">
-                    <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-widest mb-2">
-                      Menerima Pembayaran Melalui:
-                    </p>
-                    <div className="flex flex-wrap items-center justify-center gap-1.5">
-                      {supportedApps.map(app => (
-                        <span 
-                          key={app.name} 
-                          className={clsx("text-[9px] font-bold px-2 py-0.5 rounded", app.color)}
-                        >
-                          {app.name}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Quick links to simulations */}
-                <div className="p-4 bg-app-bg rounded-xl space-y-2 border border-app-border">
-                  <p className="text-xs font-bold text-app-text">Uji Coba Integrasi:</p>
-                  <div className="flex flex-col gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab('sim-generate')}
-                      className="flex items-center justify-between p-2.5 bg-app-card hover:bg-app-border rounded-lg text-xs font-semibold text-app-text transition-colors"
-                    >
-                      <span className="flex items-center gap-2">
-                        <Zap size={14} className="text-red-600" />
-                        Test Generate Dynamic QRIS
-                      </span>
-                      <ChevronRight size={14} />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab('sim-webhook')}
-                      className="flex items-center justify-between p-2.5 bg-app-card hover:bg-app-border rounded-lg text-xs font-semibold text-app-text transition-colors"
-                    >
-                      <span className="flex items-center gap-2">
-                        <Radio size={14} className="text-blue-600" />
-                        Test Webhook Callback Payment
-                      </span>
-                      <ChevronRight size={14} />
-                    </button>
-                  </div>
-                </div>
               </div>
             </div>
           </div>
@@ -1188,7 +837,7 @@ export const QrisSettings: React.FC = () => {
               <div>
                 <div className="flex items-center gap-2">
                   <span className="px-2.5 py-1 bg-blue-600 text-white font-mono text-xs font-black rounded-lg">WEBHOOK</span>
-                  <code className="text-sm font-mono font-bold text-app-text">POST /api/qris/webhook</code>
+                  <code className="text-sm font-mono font-bold text-app-text">POST /api/qris/payment-callback</code>
                 </div>
                 <p className="text-xs text-app-text-muted mt-1.5">
                   Simulasikan notifikasi HTTP POST callback dari Payment Gateway / Bank saat pembayaran QRIS berhasil diselesaikan.

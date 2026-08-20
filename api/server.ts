@@ -34,6 +34,70 @@ interface WebhookLogEntry {
 
 const webhookLogs: WebhookLogEntry[] = [];
 
+// In-memory store for confirmed paid transactions from Webhook / Gateway
+interface PaidTransactionRecord {
+  invoiceId: string;
+  transactionId: string;
+  amount: number;
+  paidAt: string;
+  status: string;
+  paymentSource?: string;
+  rawPayload?: any;
+}
+
+const paidTransactions = new Map<string, PaidTransactionRecord>();
+
+function normalizeKey(str: string): string {
+  if (!str) return '';
+  return str.trim().toLowerCase().replace(/^inv-/, '').replace(/[^a-z0-9]/g, '');
+}
+
+function recordPaymentSuccess(rawPayload: any, customInvoiceId?: string, customTxId?: string, customAmount?: number): PaidTransactionRecord {
+  const p = rawPayload || {};
+  const data = p.data || p.result || p.transaction || {};
+
+  // Extract Invoice ID from any possible gateway payload schema
+  const detectedInvoiceId = customInvoiceId || 
+    p.invoice_id || p.invoiceId || p.order_id || p.orderId || p.ref_id || p.reference_id || p.bill_no || p.billNo ||
+    data.invoice_id || data.invoiceId || data.order_id || data.orderId || data.ref_id || data.reference_id ||
+    p.id || data.id || '';
+
+  // Extract Transaction ID
+  const detectedTxId = customTxId ||
+    p.transaction_id || p.transactionId || p.trx_id || p.trxId || p.payment_id || p.paymentId ||
+    data.transaction_id || data.transactionId || data.trx_id || data.trxId ||
+    `TX-${Date.now()}`;
+
+  // Extract Amount
+  const detectedAmount = customAmount ||
+    Number(p.amount || p.nominal || p.total || p.gross_amount || data.amount || data.nominal || data.total || 0);
+
+  // Extract Payment Source
+  const detectedSource = p.provider || p.payment_source || p.payment_method || p.bank || data.provider || data.payment_method || 'QRIS Dinamis';
+
+  const record: PaidTransactionRecord = {
+    invoiceId: String(detectedInvoiceId),
+    transactionId: String(detectedTxId),
+    amount: detectedAmount,
+    paidAt: new Date().toISOString(),
+    status: 'PAID',
+    paymentSource: detectedSource,
+    rawPayload: p
+  };
+
+  // Register in map under multiple normalized keys so lookups never miss
+  if (record.invoiceId) {
+    paidTransactions.set(record.invoiceId, record);
+    paidTransactions.set(normalizeKey(record.invoiceId), record);
+  }
+  if (record.transactionId) {
+    paidTransactions.set(record.transactionId, record);
+    paidTransactions.set(normalizeKey(record.transactionId), record);
+  }
+
+  return record;
+}
+
 // Helper: Calculate CRC16 CCITT for standard EMVCo QRIS
 function calculateCRC16(str: string): string {
   let crc = 0xFFFF;
@@ -53,6 +117,83 @@ function calculateCRC16(str: string): string {
 function formatTLV(tag: string, value: string): string {
   const len = value.length.toString().padStart(2, '0');
   return `${tag}${len}${value}`;
+}
+
+// Parse EMVCo / QRIS string to extract tags (Merchant Name tag 59, NMID tag 26/51 subtag 01/02, City tag 60, etc.)
+function parseEMVCoQRIS(qrisString: string): {
+  merchantName?: string;
+  nmid?: string;
+  city?: string;
+  postalCode?: string;
+  amount?: number;
+  currency?: string;
+} {
+  const result: {
+    merchantName?: string;
+    nmid?: string;
+    city?: string;
+    postalCode?: string;
+    amount?: number;
+    currency?: string;
+  } = {};
+
+  if (!qrisString || typeof qrisString !== 'string') return result;
+
+  const raw = qrisString.trim();
+  let index = 0;
+
+  while (index < raw.length - 4) {
+    const tag = raw.substring(index, index + 2);
+    const lengthStr = raw.substring(index + 2, index + 4);
+    const length = parseInt(lengthStr, 10);
+
+    if (isNaN(length) || length <= 0 || index + 4 + length > raw.length) {
+      break;
+    }
+
+    const value = raw.substring(index + 4, index + 4 + length);
+
+    if (tag === '59') {
+      result.merchantName = value.trim();
+    } else if (tag === '60') {
+      result.city = value.trim();
+    } else if (tag === '61') {
+      result.postalCode = value.trim();
+    } else if (tag === '54') {
+      const num = parseFloat(value);
+      if (!isNaN(num)) result.amount = num;
+    } else if (tag === '53') {
+      result.currency = value.trim();
+    } else if ((parseInt(tag, 10) >= 26 && parseInt(tag, 10) <= 51)) {
+      let subIndex = 0;
+      while (subIndex < value.length) {
+        const subTag = value.substring(subIndex, subIndex + 2);
+        const subLengthStr = value.substring(subIndex + 2, subIndex + 4);
+        const subLength = parseInt(subLengthStr, 10);
+        if (isNaN(subLength) || subLength <= 0 || subIndex + 4 + subLength > value.length) {
+          break;
+        }
+        const subValue = value.substring(subIndex + 4, subIndex + 4 + subLength);
+        if (subTag === '01' || subTag === '02' || subTag === '03') {
+          if (subValue.toUpperCase().startsWith('ID') || /^[0-9A-Z]{9,25}$/i.test(subValue)) {
+            result.nmid = subValue.trim();
+          }
+        }
+        subIndex += 4 + subLength;
+      }
+    }
+
+    index += 4 + length;
+  }
+
+  if (!result.nmid) {
+    const nmidMatch = raw.match(/ID[0-9]{9,18}/i);
+    if (nmidMatch) {
+      result.nmid = nmidMatch[0].toUpperCase();
+    }
+  }
+
+  return result;
 }
 
 // Generate valid standard Indonesian QRIS dynamic payload
@@ -103,6 +244,114 @@ function generateEMVCoQRIS(params: {
 // -------------------------------------------------------------
 // QRIS API Routes
 // -------------------------------------------------------------
+
+// Deep recursive scanner to find standard EMVCo payload (starting with 000201), image URLs, and transaction metadata anywhere in API responses
+function extractQrisDetailsFromObject(obj: any): {
+  qrisContent?: string;
+  qrImageUrl?: string;
+  transactionId?: string;
+  merchantName?: string;
+  nmid?: string;
+  expiresAt?: string;
+} {
+  const result: {
+    qrisContent?: string;
+    qrImageUrl?: string;
+    transactionId?: string;
+    merchantName?: string;
+    nmid?: string;
+    expiresAt?: string;
+  } = {};
+
+  if (!obj || typeof obj !== 'object') return result;
+
+  function traverse(current: any, keyPath: string = '') {
+    if (!current) return;
+
+    if (typeof current === 'string') {
+      const trimmed = current.trim();
+      const lowerKey = keyPath.toLowerCase();
+
+      // Check if it is a raw EMVCo QRIS string (starts with 000201)
+      if (trimmed.startsWith('000201') && trimmed.length > 30) {
+        if (!result.qrisContent) {
+          result.qrisContent = trimmed;
+        }
+      }
+      // Check if it is a QR image URL, link, or Data URI
+      else if (
+        (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('data:image/')) &&
+        (lowerKey.includes('qr') || lowerKey.includes('image') || lowerKey.includes('link') || lowerKey.includes('url') || lowerKey.includes('barcode') || trimmed.includes('.png') || trimmed.includes('.jpg') || trimmed.includes('.svg') || trimmed.includes('chart.googleapis.com'))
+      ) {
+        if (!result.qrImageUrl && !lowerKey.includes('webhook') && !lowerKey.includes('callback') && !lowerKey.includes('notify') && !lowerKey.includes('redirect')) {
+          result.qrImageUrl = trimmed;
+        }
+      }
+      // Check for transaction reference / ID
+      else if (
+        (lowerKey.includes('transaction') || lowerKey.includes('order_id') || lowerKey.includes('orderid') || lowerKey.includes('ref_id') || lowerKey.includes('refid') || lowerKey.includes('referenceno') || lowerKey.includes('reference_id') || lowerKey.includes('referenceid') || lowerKey === 'id' || lowerKey.endsWith('.id')) &&
+        trimmed.length >= 2 &&
+        trimmed.length < 100
+      ) {
+        if (!result.transactionId) {
+          result.transactionId = trimmed;
+        }
+      }
+      // Check for merchant name
+      else if (
+        (lowerKey.includes('merchant_name') || lowerKey.includes('merchantname') || lowerKey === 'merchant' || lowerKey.endsWith('.merchant')) &&
+        trimmed.length > 1 &&
+        trimmed.length < 100
+      ) {
+        if (!result.merchantName) {
+          result.merchantName = trimmed;
+        }
+      }
+      // Check for NMID
+      else if (
+        (lowerKey.includes('nmid') || lowerKey.includes('merchant_id') || lowerKey.includes('merchantid')) &&
+        trimmed.length > 5 &&
+        trimmed.length < 35
+      ) {
+        if (!result.nmid) {
+          result.nmid = trimmed;
+        }
+      }
+      // Check for expiry date
+      else if (
+        (lowerKey.includes('expire') || lowerKey.includes('expiry') || lowerKey.includes('valid')) &&
+        (trimmed.includes('T') || trimmed.includes('-') || trimmed.includes(':'))
+      ) {
+        if (!result.expiresAt) {
+          result.expiresAt = trimmed;
+        }
+      }
+      return;
+    }
+
+    if (typeof current === 'number') {
+      const lowerKey = keyPath.toLowerCase();
+      if ((lowerKey.includes('transaction') || lowerKey.includes('order_id') || lowerKey === 'id') && !result.transactionId) {
+        result.transactionId = String(current);
+      }
+      return;
+    }
+
+    if (Array.isArray(current)) {
+      for (let i = 0; i < current.length; i++) {
+        traverse(current[i], `${keyPath}[${i}]`);
+      }
+      return;
+    }
+
+    for (const [k, v] of Object.entries(current)) {
+      traverse(v, keyPath ? `${keyPath}.${k}` : k);
+    }
+  }
+
+  traverse(obj);
+  return result;
+}
 
 // 0. Proxy Endpoint: POST /api/qris/proxy-generate (Bypasses CORS for external API URLs)
 app.post("/api/qris/proxy-generate", async (req, res) => {
@@ -233,77 +482,83 @@ app.post("/api/qris/proxy-generate", async (req, res) => {
       responseData = { rawResponse: responseText };
     }
 
-    // Comprehensive normalization for various Indonesian QRIS API providers (QRISAN, Qrisku, Midtrans, Xendit, Tripay, etc.)
-    let extractedQrisContent = '';
-    let extractedQrImage = '';
-    let extractedTxId = '';
-    let extractedExpiresAt = '';
-    let extractedMerchant = targetMerchant;
+    // Comprehensive normalization using recursive extractor for various Indonesian QRIS API providers (QRISAN, SPE Solution, Qrisku, Midtrans, Xendit, Tripay, etc.)
+    const deepExtracted = extractQrisDetailsFromObject(responseData);
 
+    let extractedQrisContent = deepExtracted.qrisContent || '';
+    let extractedQrImage = deepExtracted.qrImageUrl || '';
+    let extractedTxId = deepExtracted.transactionId || `TX-${Date.now()}`;
+    let extractedExpiresAt = deepExtracted.expiresAt || new Date(Date.now() + 30 * 60 * 1000).toISOString();
+    let extractedMerchant = deepExtracted.merchantName || targetMerchant;
+    let extractedNmid = deepExtracted.nmid || targetNmid;
+
+    // Check direct object mappings as well
     if (responseData && typeof responseData === 'object') {
-      const d = responseData.data || responseData.result || responseData;
+      const d = responseData.data || responseData.result || responseData.results || responseData;
       
-      extractedQrisContent = d.qrisContent || 
-                             d.qris_content || 
-                             d.qr_string || 
-                             d.qrString || 
-                             d.qr_code || 
-                             d.qrCode || 
-                             d.qris_data || 
-                             d.raw_qr || 
-                             d.qris || 
-                             d.qr || 
-                             responseData.qrisContent ||
-                             responseData.qris_content ||
-                             responseData.qr_string ||
-                             responseData.qrString ||
-                             responseData.qr_code ||
-                             responseData.qrCode ||
-                             '';
+      if (!extractedQrisContent) {
+        extractedQrisContent = d.qrisContent || 
+                               d.qris_content || 
+                               d.qr_string || 
+                               d.qrString || 
+                               d.qr_code || 
+                               d.qrCode || 
+                               d.qris_data || 
+                               d.qrisData || 
+                               d.raw_qr || 
+                               d.rawQr || 
+                               d.qris || 
+                               d.qr || 
+                               d.payload || 
+                               responseData.qrisContent ||
+                               responseData.qris_content ||
+                               responseData.qr_string ||
+                               responseData.qrString ||
+                               responseData.qr_code ||
+                               responseData.qrCode ||
+                               responseData.qris ||
+                               responseData.qr ||
+                               '';
+      }
 
-      extractedQrImage = d.qr_image || 
-                         d.qr_image_url || 
-                         d.qr_url || 
-                         d.qrImageUrl || 
-                         d.qrUrl || 
-                         d.image || 
-                         d.qr_image_base64 || 
-                         responseData.qr_image ||
-                         responseData.qr_image_url ||
-                         responseData.qr_url ||
-                         '';
+      if (!extractedQrImage) {
+        extractedQrImage = d.qr_image || 
+                           d.qr_image_url || 
+                           d.qr_url || 
+                           d.qrImageUrl || 
+                           d.qrUrl || 
+                           d.qr_link || 
+                           d.qrLink || 
+                           d.image || 
+                           d.image_url || 
+                           d.imageUrl || 
+                           d.qr_image_base64 || 
+                           d.qrImageBase64 || 
+                           responseData.qr_image ||
+                           responseData.qr_image_url ||
+                           responseData.qr_url ||
+                           responseData.qr_link ||
+                           responseData.qrLink ||
+                           '';
+      }
 
-      extractedTxId = d.transaction_id || 
-                      d.transactionId || 
-                      d.id || 
-                      d.tx_id || 
-                      d.reference_id || 
-                      d.ref_id || 
-                      d.order_id || 
-                      responseData.transaction_id ||
-                      responseData.transactionId ||
-                      responseData.id ||
-                      `TX-${Date.now()}`;
-
-      extractedExpiresAt = d.expires_at || 
-                           d.expired_at || 
-                           d.expiresAt || 
-                           d.expiredAt || 
-                           d.expiry_time || 
-                           responseData.expires_at || 
-                           responseData.expired_at || 
-                           new Date(Date.now() + 30 * 60 * 1000).toISOString();
-
-      if (d.merchant_name || d.merchantName) {
-        extractedMerchant = d.merchant_name || d.merchantName;
+      // If we have a genuine QR string returned by QRISAN, parse EMVCo to extract exact Merchant Name & NMID from the QR itself
+      if (extractedQrisContent) {
+        const parsedFromQr = parseEMVCoQRIS(extractedQrisContent);
+        if (parsedFromQr.merchantName) {
+          extractedMerchant = parsedFromQr.merchantName;
+        }
+        if (parsedFromQr.nmid) {
+          extractedNmid = parsedFromQr.nmid;
+        }
       }
     }
 
-    // Fallback standard EMVCo QR string if string wasn't explicitly returned but response is successful
+    // Only use synthetic fallback if no genuine QR string OR QR image was returned from the gateway
     if (!extractedQrisContent && !extractedQrImage && externalResponse.ok) {
       extractedQrisContent = generateEMVCoQRIS({
-        merchantName: targetMerchant,
-        nmid: targetNmid,
+        merchantName: extractedMerchant || targetMerchant,
+        nmid: extractedNmid || targetNmid,
         invoiceId: invoiceNumber,
         amount: numericAmount
       });
@@ -320,6 +575,7 @@ app.post("/api/qris/proxy-generate", async (req, res) => {
       qrImageUrl: extractedQrImage,
       transactionId: extractedTxId,
       merchantName: extractedMerchant,
+      nmid: extractedNmid,
       amount: numericAmount,
       expiresAt: extractedExpiresAt,
       response: responseData,
@@ -339,6 +595,123 @@ app.post("/api/qris/proxy-generate", async (req, res) => {
       latencyMs: latency,
       error: errorMsg,
       hint: "Pastikan URL endpoint benar, mendukung method POST, dan server target dapat menerima request dari internet."
+    });
+  }
+});
+
+// 0.1 Proxy Endpoint to Check and Sync Merchant Profile & NMID from QRISAN Server: POST /api/qris/check-profile
+app.post("/api/qris/check-profile", async (req, res) => {
+  const { apiEndpoint, secretApiKey, staticQrisContent } = req.body;
+  const targetEndpoint = (apiEndpoint || '').trim();
+
+  // If user provided a static QRIS string directly, parse it immediately
+  if (staticQrisContent && typeof staticQrisContent === 'string' && staticQrisContent.startsWith('000201')) {
+    const parsed = parseEMVCoQRIS(staticQrisContent);
+    return res.json({
+      success: true,
+      source: "PARSED_QRIS_STRING",
+      merchantName: parsed.merchantName || 'MERCHANT QRIS',
+      nmid: parsed.nmid || 'ID1020000000000',
+      city: parsed.city || 'INDONESIA',
+      postalCode: parsed.postalCode || '10110',
+      message: "Data Merchant & NMID berhasil diekstrak otomatis dari payload QRIS."
+    });
+  }
+
+  // If no external URL or default local endpoint
+  if (!targetEndpoint || targetEndpoint === '/api/qris/generate' || targetEndpoint.startsWith('/api/')) {
+    return res.json({
+      success: true,
+      source: "INTERNAL_DEFAULT",
+      merchantName: "SEPTIAN NETWORK",
+      nmid: "ID102003849102",
+      message: "Menggunakan profil default server lokal."
+    });
+  }
+
+  let fullUrl = targetEndpoint;
+  if (!fullUrl.startsWith('http://') && !fullUrl.startsWith('https://')) {
+    fullUrl = `https://${fullUrl}`;
+  }
+
+  try {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      "Accept": "application/json, text/plain, */*"
+    };
+
+    if (secretApiKey) {
+      headers["X-API-Key"] = secretApiKey;
+      headers["X-Api-Key"] = secretApiKey;
+      headers["api-key"] = secretApiKey;
+      headers["Authorization"] = `Bearer ${secretApiKey}`;
+    }
+
+    // Try a probe request with 1 IDR to fetch merchant name and NMID from gateway response
+    const probeResponse = await fetch(fullUrl, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        amount: 1000,
+        nominal: 1000,
+        total: 1000,
+        invoice_id: `PROBE-${Date.now().toString().slice(-4)}`,
+        invoiceId: `PROBE-${Date.now().toString().slice(-4)}`,
+        order_id: `PROBE-${Date.now().toString().slice(-4)}`,
+        customer_name: 'Pemeriksaan Profil',
+        clientName: 'Pemeriksaan Profil',
+        expire_minutes: 5
+      })
+    });
+
+    const responseText = await probeResponse.text();
+    let responseData: any = null;
+    try {
+      responseData = JSON.parse(responseText);
+    } catch {
+      responseData = { rawResponse: responseText };
+    }
+
+    let merchantName = '';
+    let nmid = '';
+    let qrisContent = '';
+
+    if (responseData && typeof responseData === 'object') {
+      const d = responseData.data || responseData.result || responseData.results || responseData;
+      merchantName = d.merchant_name || d.merchantName || d.merchant || responseData.merchant_name || responseData.merchantName || '';
+      nmid = d.nmid || d.NMID || d.merchant_id || d.merchantId || responseData.nmid || responseData.NMID || '';
+      qrisContent = d.qrisContent || d.qris_content || d.qr_string || d.qrString || d.qr_code || d.qrCode || d.qris || d.qr || '';
+
+      if (qrisContent) {
+        const parsed = parseEMVCoQRIS(qrisContent);
+        if (parsed.merchantName && !merchantName) merchantName = parsed.merchantName;
+        if (parsed.nmid && !nmid) nmid = parsed.nmid;
+      }
+    }
+
+    if (merchantName || nmid) {
+      return res.json({
+        success: true,
+        source: "QRISAN_SERVER",
+        merchantName: merchantName || 'SEPTIAN NETWORK',
+        nmid: nmid || 'ID102003849102',
+        rawResponse: responseData,
+        message: `Berhasil mengambil identitas dari server QRISAN: ${merchantName} (${nmid})`
+      });
+    }
+
+    return res.json({
+      success: probeResponse.ok,
+      source: "QRISAN_RAW",
+      merchantName: merchantName || 'SEPTIAN NETWORK',
+      nmid: nmid || 'ID102003849102',
+      rawResponse: responseData,
+      message: "Respon server diterima. Silakan periksa data merchant."
+    });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      error: err instanceof Error ? err.message : 'Gagal menghubungi server QRISAN untuk mengambil profil'
     });
   }
 });
@@ -397,29 +770,140 @@ app.post("/api/qris/generate", (req, res) => {
   });
 });
 
-// 2. Endpoint: POST /api/qris/webhook (Receives gateway callbacks)
-app.post("/api/qris/webhook", (req, res) => {
+// 2. Endpoint: POST /api/qris/payment-callback (Receives gateway callbacks)
+app.post("/api/qris/payment-callback", (req, res) => {
+  const payload = req.body || {};
+  const statusStr = String(
+    payload.status || payload.payment_status || payload.transaction_status || 
+    payload.state || payload.event || payload.data?.status || payload.data?.payment_status || 'PAID'
+  ).toUpperCase();
+
+  const isSuccess = statusStr.includes('PAID') || 
+                    statusStr.includes('SUCCESS') || 
+                    statusStr.includes('SETTLED') || 
+                    statusStr.includes('COMPLETED') || 
+                    statusStr.includes('00') ||
+                    statusStr === '0' ||
+                    statusStr === 'SUKSES' ||
+                    statusStr === 'LUNAS' ||
+                    payload.event === 'payment.success';
+
+  let record: PaidTransactionRecord | null = null;
+  if (isSuccess) {
+    record = recordPaymentSuccess(payload);
+  }
+
   const entry: WebhookLogEntry = {
     id: `WH-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     timestamp: new Date().toISOString(),
     source: req.ip || req.socket.remoteAddress || 'unknown',
     headers: req.headers as Record<string, string | string[] | undefined>,
     payload: req.body,
-    status: 'PROCESSED'
+    status: isSuccess ? 'PROCESSED' : 'RECEIVED'
   };
 
   webhookLogs.unshift(entry);
   if (webhookLogs.length > 50) webhookLogs.pop();
 
-  console.log("[QRIS Webhook Received]:", JSON.stringify(entry, null, 2));
+  console.log("[QRIS Webhook Received]:", JSON.stringify({ entry, recordedPayment: record }, null, 2));
 
   res.status(200).json({
     success: true,
     received: true,
     status: "PROCESSED",
+    isPaid: isSuccess,
+    invoiceId: record?.invoiceId || payload.invoice_id || payload.invoiceId,
+    transactionId: record?.transactionId || payload.transaction_id || payload.transactionId,
     logId: entry.id,
     timestamp: entry.timestamp,
-    message: "Webhook event received and logged successfully."
+    message: isSuccess ? "Pembayaran berhasil diproses dan dicatat." : "Webhook event received and logged."
+  });
+});
+
+// 2.1 Endpoint: GET /api/qris/payment-status/:invoiceId (Poll payment status for public invoice)
+app.get("/api/qris/payment-status/:invoiceId", (req, res) => {
+  const { invoiceId } = req.params;
+  const txId = (req.query.txId || req.query.transactionId || '') as string;
+  const targetAmount = Number(req.query.amount || 0);
+
+  let record = paidTransactions.get(invoiceId) || 
+               paidTransactions.get(normalizeKey(invoiceId)) || 
+               (txId ? paidTransactions.get(txId) || paidTransactions.get(normalizeKey(txId)) : null);
+
+  // If not found in map, inspect recent webhook logs as fallback
+  if (!record && webhookLogs.length > 0) {
+    for (const log of webhookLogs) {
+      const p = log.payload || {};
+      const logInvId = String(p.invoice_id || p.invoiceId || p.order_id || p.orderId || p.ref_id || p.id || '');
+      const logTxId = String(p.transaction_id || p.transactionId || p.trx_id || '');
+      const logStatus = String(p.status || p.payment_status || p.transaction_status || p.event || '').toUpperCase();
+      const logAmount = Number(p.amount || p.nominal || p.total || 0);
+
+      const isLogPaid = logStatus.includes('PAID') || 
+                        logStatus.includes('SUCCESS') || 
+                        logStatus.includes('SETTLED') || 
+                        logStatus.includes('COMPLETED') ||
+                        logStatus.includes('00') ||
+                        logStatus === '0' ||
+                        p.event === 'payment.success';
+
+      if (isLogPaid) {
+        const matchesInvoice = logInvId && (logInvId === invoiceId || normalizeKey(logInvId) === normalizeKey(invoiceId));
+        const matchesTx = txId && logTxId && (logTxId === txId || normalizeKey(logTxId) === normalizeKey(txId));
+        const matchesAmount = targetAmount > 0 && logAmount === targetAmount;
+
+        if (matchesInvoice || matchesTx || (matchesAmount && (matchesInvoice || !logInvId))) {
+          record = recordPaymentSuccess(p, invoiceId, txId || logTxId, targetAmount || logAmount);
+          break;
+        }
+      }
+    }
+  }
+
+  if (record) {
+    return res.json({
+      success: true,
+      isPaid: true,
+      status: 'PAID',
+      payment: {
+        invoiceId: record.invoiceId || invoiceId,
+        transactionId: record.transactionId || txId || `TX-${invoiceId}`,
+        amount: record.amount,
+        paidAt: record.paidAt,
+        paymentSource: record.paymentSource || 'QRIS Dinamis',
+        status: record.status
+      }
+    });
+  }
+
+  return res.json({
+    success: true,
+    isPaid: false,
+    status: 'PENDING',
+    invoiceId,
+    message: 'Menunggu konfirmasi pembayaran dari gateway QRIS.'
+  });
+});
+
+// 2.2 Endpoint: POST /api/qris/mark-paid (Manually mark invoice as paid or trigger test)
+app.post("/api/qris/mark-paid", (req, res) => {
+  const { invoiceId, transactionId, amount, paymentSource } = req.body;
+  if (!invoiceId) {
+    return res.status(400).json({ success: false, error: "Field 'invoiceId' is required." });
+  }
+
+  const record = recordPaymentSuccess(
+    { provider: paymentSource || 'QRIS Dinamis', amount: Number(amount || 0) },
+    String(invoiceId),
+    String(transactionId || `TX-${invoiceId}`),
+    Number(amount || 0)
+  );
+
+  return res.json({
+    success: true,
+    isPaid: true,
+    message: `Invoice #${invoiceId} berhasil ditandai sebagai LUNAS.`,
+    payment: record
   });
 });
 
@@ -441,7 +925,7 @@ app.delete("/api/qris/webhook-logs", (req, res) => {
 // 5. Endpoint: POST /api/qris/simulate-webhook (Allows sending custom webhook tests)
 app.post("/api/qris/simulate-webhook", async (req, res) => {
   const { targetUrl, payload, secretApiKey } = req.body;
-  const defaultTarget = `http://localhost:${Number(process.env.PORT) || 3000}/api/qris/webhook`;
+  const defaultTarget = `http://localhost:${Number(process.env.PORT) || 3000}/api/qris/payment-callback`;
   const url = targetUrl || defaultTarget;
 
   try {

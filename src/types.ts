@@ -41,6 +41,8 @@ export interface Invoice {
   creatorName?: string;
   voucherCode?: string;
   discountAmount?: number;
+  paidAt?: string;
+  paymentMethod?: string;
 }
 
 export interface Voucher {
