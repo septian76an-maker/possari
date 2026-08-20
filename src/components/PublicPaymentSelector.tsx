@@ -458,10 +458,6 @@ export const PublicPaymentSelector: React.FC<PublicPaymentSelectorProps> = ({ in
             {/* Connected Server Badge */}
             <div className="flex flex-wrap items-center justify-between gap-2 pb-4 mb-5 border-b border-app-border text-xs">
               <div className="flex items-center gap-2">
-                <span className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 rounded-full font-bold text-[11px]">
-                  <Zap size={13} className="text-emerald-500" />
-                  {serverQris?.mode === 'EXTERNAL_PROXY' ? 'Server Gateway Eksternal Terhubung' : 'Server QRIS Aktif'}
-                </span>
                 {serverQris?.transactionId && (
                   <span className="text-app-text-muted font-mono text-[11px] hidden sm:inline">
                     ID Transaksi: <strong className="text-app-text">{serverQris.transactionId}</strong>
@@ -573,10 +569,6 @@ export const PublicPaymentSelector: React.FC<PublicPaymentSelectorProps> = ({ in
               {/* Right Column: Information & Actions */}
               <div className="flex-1 space-y-4 w-full">
                 <div>
-                  <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-red-500/10 text-red-600 rounded-full text-xs font-bold mb-2">
-                    <Sparkles size={13} />
-                    Generate Otomatis dari Gateway QRIS
-                  </div>
                   <h4 className="text-lg font-black text-app-text">
                     Scan Kode QRIS Dinamis
                   </h4>

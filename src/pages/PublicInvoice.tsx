@@ -149,13 +149,15 @@ export const PublicInvoice: React.FC = () => {
       </div>
 
       {/* Interactive Payment Method Dropdown & Dynamic QRIS Selector */}
-      <div className="max-w-4xl mx-auto">
-        <PublicPaymentSelector 
-          invoice={invoice} 
-          client={client || undefined} 
-          onPaymentSuccess={handlePaymentSuccess}
-        />
-      </div>
+      {invoice.status !== 'paid' && (
+        <div className="max-w-4xl mx-auto">
+          <PublicPaymentSelector 
+            invoice={invoice} 
+            client={client || undefined} 
+            onPaymentSuccess={handlePaymentSuccess}
+          />
+        </div>
+      )}
 
       {/* Official Invoice Sheet */}
       <InvoiceView invoice={invoice} client={client || undefined} isPublic={true} />
