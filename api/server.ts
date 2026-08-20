@@ -2,11 +2,34 @@ import express from "express";
 import path from "path";
 import { Resend } from 'resend';
 import dotenv from 'dotenv';
+import * as admin from 'firebase-admin';
 
 dotenv.config();
 
+// Initialize Firebase Admin securely from Environment Variable
+try {
+  if (!admin.apps.length) {
+    if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+      const serviceAccount = JSON.parse(Buffer.from(process.env.FIREBASE_SERVICE_ACCOUNT, 'base64').toString('utf-8'));
+      admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount)
+      });
+      console.log("[Firebase Admin] Initialized successfully via Base64 ENV");
+    } else {
+      // Fallback to application default credentials (works on GCP Cloud Run/App Engine)
+      admin.initializeApp({
+        projectId: 'ai-studio-d9d4575e-7171-4bb8-b126-d142a9ba502c'
+      });
+      console.log("[Firebase Admin] Initialized with Default Credentials / Project ID");
+    }
+  }
+} catch (error) {
+  console.warn("[Firebase Admin] Failed to initialize. Firestore webhook updates will fallback to memory only.", error);
+}
+
 const app = express();
 app.use(express.json());
+app.use(express.urlencoded({ extended: true })); // Add support for form-encoded webhooks
 
 // Lazy initialization for Resend
 let resendClient: Resend | null = null;
@@ -56,17 +79,17 @@ function recordPaymentSuccess(rawPayload: any, customInvoiceId?: string, customT
   const p = rawPayload || {};
   const data = p.data || p.result || p.transaction || {};
 
-  // Extract Invoice ID from any possible gateway payload schema
-  const detectedInvoiceId = customInvoiceId || 
-    p.invoice_id || p.invoiceId || p.order_id || p.orderId || p.ref_id || p.reference_id || p.bill_no || p.billNo ||
-    data.invoice_id || data.invoiceId || data.order_id || data.orderId || data.ref_id || data.reference_id ||
-    p.id || data.id || '';
-
   // Extract Transaction ID
   const detectedTxId = customTxId ||
     p.transaction_id || p.transactionId || p.trx_id || p.trxId || p.payment_id || p.paymentId ||
     data.transaction_id || data.transactionId || data.trx_id || data.trxId ||
+    p.id || data.id ||
     `TX-${Date.now()}`;
+
+  // Extract Invoice ID from any possible gateway payload schema
+  const detectedInvoiceId = customInvoiceId || 
+    p.invoice_id || p.invoiceId || p.order_id || p.orderId || p.ref_id || p.reference_id || p.bill_no || p.billNo ||
+    data.invoice_id || data.invoiceId || data.order_id || data.orderId || data.ref_id || data.reference_id || '';
 
   // Extract Amount
   const detectedAmount = customAmount ||
@@ -771,8 +794,10 @@ app.post("/api/qris/generate", (req, res) => {
 });
 
 // 2. Endpoint: POST /api/qris/payment-callback (Receives gateway callbacks)
-app.post("/api/qris/payment-callback", (req, res) => {
+app.post("/api/qris/payment-callback", async (req, res) => {
   const payload = req.body || {};
+  console.log("[QRIS Webhook] Received payload:", JSON.stringify(payload));
+  
   const statusStr = String(
     payload.status || payload.payment_status || payload.transaction_status || 
     payload.state || payload.event || payload.data?.status || payload.data?.payment_status || 'PAID'
@@ -785,12 +810,38 @@ app.post("/api/qris/payment-callback", (req, res) => {
                     statusStr.includes('00') ||
                     statusStr === '0' ||
                     statusStr === 'SUKSES' ||
+                    statusStr === 'BERHASIL' ||
                     statusStr === 'LUNAS' ||
                     payload.event === 'payment.success';
 
   let record: PaidTransactionRecord | null = null;
   if (isSuccess) {
     record = recordPaymentSuccess(payload);
+    console.log(`[QRIS Webhook] Processed Success Record for Invoice: ${record.invoiceId || 'UNKNOWN'}`);
+
+    // Attempt to update Firestore directly via Admin SDK
+    try {
+      if (admin.apps.length > 0) {
+        if (record.invoiceId) {
+          const db = admin.firestore();
+          console.log(`[QRIS Webhook] Attempting Firestore update for doc: ${record.invoiceId}`);
+          await db.collection('invoices').doc(record.invoiceId).update({
+            status: 'paid',
+            paidAt: record.paidAt,
+            paymentMethod: record.paymentSource || 'QRIS Dinamis'
+          });
+          console.log(`[QRIS Webhook] Firebase Firestore successfully updated for Invoice #${record.invoiceId}`);
+        } else {
+          console.warn(`[QRIS Webhook] Skipping Firestore update: invoiceId is empty. Received body keys:`, Object.keys(payload));
+        }
+      } else {
+         console.warn(`[QRIS Webhook] Skipping Firestore update: Admin SDK not initialized (Missing FIREBASE_SERVICE_ACCOUNT in ENV).`);
+      }
+    } catch (dbError: any) {
+      console.warn(`[QRIS Webhook] Could not update Firestore. Error: ${dbError.message}`);
+    }
+  } else {
+    console.log(`[QRIS Webhook] Ignored non-success webhook. Status: ${statusStr}`);
   }
 
   const entry: WebhookLogEntry = {
@@ -821,7 +872,7 @@ app.post("/api/qris/payment-callback", (req, res) => {
 });
 
 // 2.1 Endpoint: GET /api/qris/payment-status/:invoiceId (Poll payment status for public invoice)
-app.get("/api/qris/payment-status/:invoiceId", (req, res) => {
+app.get("/api/qris/payment-status/:invoiceId", async (req, res) => {
   const { invoiceId } = req.params;
   const txId = (req.query.txId || req.query.transactionId || '') as string;
   const targetAmount = Number(req.query.amount || 0);
@@ -834,8 +885,9 @@ app.get("/api/qris/payment-status/:invoiceId", (req, res) => {
   if (!record && webhookLogs.length > 0) {
     for (const log of webhookLogs) {
       const p = log.payload || {};
+      const data = p.data || p.result || p.transaction || {};
       const logInvId = String(p.invoice_id || p.invoiceId || p.order_id || p.orderId || p.ref_id || p.id || '');
-      const logTxId = String(p.transaction_id || p.transactionId || p.trx_id || '');
+      const logTxId = String(p.transaction_id || p.transactionId || p.trx_id || p.id || data.id || '');
       const logStatus = String(p.status || p.payment_status || p.transaction_status || p.event || '').toUpperCase();
       const logAmount = Number(p.amount || p.nominal || p.total || 0);
 
@@ -861,12 +913,27 @@ app.get("/api/qris/payment-status/:invoiceId", (req, res) => {
   }
 
   if (record) {
+    // FORCE UPDATE TO FIRESTORE DIRECTLY
+    try {
+      if (admin.apps.length > 0) {
+        const db = admin.firestore();
+        await db.collection('invoices').doc(invoiceId).update({
+          status: 'paid',
+          paidAt: record.paidAt || new Date().toISOString(),
+          paymentMethod: record.paymentSource || 'QRIS Dinamis'
+        });
+        console.log(`[QRIS Poll] Recovered & forcefully updated Firestore for Invoice #${invoiceId}`);
+      }
+    } catch (e: any) {
+      console.warn(`[QRIS Poll] Could not sync to Firestore (might already be paid): ${e.message}`);
+    }
+
     return res.json({
       success: true,
       isPaid: true,
       status: 'PAID',
       payment: {
-        invoiceId: record.invoiceId || invoiceId,
+        invoiceId: invoiceId,
         transactionId: record.transactionId || txId || `TX-${invoiceId}`,
         amount: record.amount,
         paidAt: record.paidAt,
