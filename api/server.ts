@@ -40,6 +40,16 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true })); // Add support for form-encoded webhooks
 
+// Health check / Cron keep-alive endpoints
+app.all(["/api/health", "/health", "/api/ping", "/ping"], (req, res) => {
+  res.status(200).json({
+    status: "ok",
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString(),
+    message: "Server is healthy and warm!"
+  });
+});
+
 // Lazy initialization for Resend
 let resendClient: Resend | null = null;
 
