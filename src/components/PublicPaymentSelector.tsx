@@ -3,6 +3,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import { Invoice, Client } from '../types';
 import { useSettings } from '../SettingsContext';
 import { generateDynamicQRIS, convertStaticQRISToDynamic } from '../utils/qris';
+import { db, doc, updateDoc } from '../firebase';
 import { 
   QrCode, 
   Building2, 
@@ -71,10 +72,31 @@ export const PublicPaymentSelector: React.FC<PublicPaymentSelectorProps> = ({ in
   const [copiedTxId, setCopiedTxId] = useState(false);
   const [timeLeft, setTimeLeft] = useState<number>(30 * 60);
 
-  // Server QRIS State
+  // Server QRIS State initialized from invoice.qrisData if valid and not expired
+  const [serverQris, setServerQris] = useState<ServerQrisResponse | null>(() => {
+    if (invoice.qrisData && (invoice.qrisData.qrisContent || invoice.qrisData.qrImageUrl)) {
+      if (!invoice.qrisData.amount || Number(invoice.qrisData.amount) === Number(invoice.total)) {
+        const expTime = invoice.qrisData.expiresAt ? new Date(invoice.qrisData.expiresAt).getTime() : (Date.now() + 30 * 60 * 1000);
+        if (expTime > Date.now() + 15000) {
+          return {
+            success: true,
+            mode: invoice.qrisData.mode || 'EXTERNAL_PROXY',
+            qrisContent: invoice.qrisData.qrisContent,
+            qrImageUrl: invoice.qrisData.qrImageUrl,
+            transactionId: invoice.qrisData.transactionId,
+            merchantName: invoice.qrisData.merchantName,
+            nmid: invoice.qrisData.nmid,
+            amount: invoice.qrisData.amount || invoice.total,
+            expiresAt: invoice.qrisData.expiresAt
+          };
+        }
+      }
+    }
+    return null;
+  });
+
   const [isLoadingQris, setIsLoadingQris] = useState<boolean>(false);
   const [qrisError, setQrisError] = useState<string | null>(null);
-  const [serverQris, setServerQris] = useState<ServerQrisResponse | null>(null);
   const qrRef = useRef<SVGSVGElement>(null);
   
   // Real-time Webhook Polling & Manual Check State
@@ -92,17 +114,62 @@ export const PublicPaymentSelector: React.FC<PublicPaymentSelectorProps> = ({ in
   const effectiveMerchantName = serverQris?.merchantName || fallbackMerchantName;
   const effectiveNmid = serverQris?.nmid || fallbackNmid;
 
-  // Fetch QRIS from connected QRIS API Server via proxy
+  // Fetch QRIS from connected QRIS API Server via proxy or reuse existing valid QRIS
   const fetchQrisFromServer = useCallback(async (forceRefresh = false) => {
     if (invoice.status === 'paid' || invoice.total <= 0) return;
 
-    const requestKey = `${invoice.id}-${invoice.total}-${settings.qrisConfig?.apiEndpoint}`;
-    if (!forceRefresh && (inFlightRef.current || lastFetchedKeyRef.current === requestKey)) {
+    // 1. If not forceRefresh, check if invoice already has valid active QRIS
+    if (!forceRefresh) {
+      if (invoice.qrisData && (invoice.qrisData.qrisContent || invoice.qrisData.qrImageUrl)) {
+        const isMatchingAmount = !invoice.qrisData.amount || Number(invoice.qrisData.amount) === Number(invoice.total);
+        const expTime = invoice.qrisData.expiresAt ? new Date(invoice.qrisData.expiresAt).getTime() : (Date.now() + 30 * 60 * 1000);
+        const isNotExpired = expTime > Date.now() + 30000;
+
+        if (isMatchingAmount && isNotExpired) {
+          setServerQris({
+            success: true,
+            mode: invoice.qrisData.mode || 'EXTERNAL_PROXY',
+            qrisContent: invoice.qrisData.qrisContent,
+            qrImageUrl: invoice.qrisData.qrImageUrl,
+            transactionId: invoice.qrisData.transactionId,
+            merchantName: invoice.qrisData.merchantName || fallbackMerchantName,
+            nmid: invoice.qrisData.nmid || fallbackNmid,
+            amount: invoice.total,
+            expiresAt: invoice.qrisData.expiresAt
+          });
+          const diffSeconds = Math.max(0, Math.floor((expTime - Date.now()) / 1000));
+          setTimeLeft(diffSeconds > 0 ? diffSeconds : 30 * 60);
+          return;
+        }
+      }
+
+      // Check localStorage cache
+      try {
+        const cachedRaw = localStorage.getItem(`posari_qris_${invoice.id}`);
+        if (cachedRaw) {
+          const cachedData = JSON.parse(cachedRaw);
+          if (cachedData && (cachedData.qrisContent || cachedData.qrImageUrl) && Number(cachedData.amount) === Number(invoice.total)) {
+            const expTime = cachedData.expiresAt ? new Date(cachedData.expiresAt).getTime() : (Date.now() + 30 * 60 * 1000);
+            if (expTime > Date.now() + 30000) {
+              setServerQris(cachedData);
+              const diffSeconds = Math.max(0, Math.floor((expTime - Date.now()) / 1000));
+              setTimeLeft(diffSeconds > 0 ? diffSeconds : 30 * 60);
+              return;
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("localStorage read cache error:", err);
+      }
+    }
+
+    const requestKey = `${invoice.id}-${invoice.total}-${settings.qrisConfig?.apiEndpoint}-${forceRefresh ? Date.now() : 'default'}`;
+    if (!forceRefresh && (inFlightRef.current || lastFetchedKeyRef.current === `${invoice.id}-${invoice.total}`)) {
       return;
     }
 
     inFlightRef.current = true;
-    lastFetchedKeyRef.current = requestKey;
+    lastFetchedKeyRef.current = `${invoice.id}-${invoice.total}`;
     setIsLoadingQris(true);
     setQrisError(null);
 
@@ -118,6 +185,7 @@ export const PublicPaymentSelector: React.FC<PublicPaymentSelectorProps> = ({ in
         body: JSON.stringify({
           apiEndpoint: targetEndpoint,
           secretApiKey: secretKey,
+          forceRefresh: forceRefresh,
           payload: {
             amount: invoice.total,
             nominal: invoice.total,
@@ -151,6 +219,34 @@ export const PublicPaymentSelector: React.FC<PublicPaymentSelectorProps> = ({ in
       } else {
         setTimeLeft(30 * 60);
       }
+
+      // Persist to localStorage for client speed
+      try {
+        localStorage.setItem(`posari_qris_${invoice.id}`, JSON.stringify(data));
+      } catch {
+        // ignore storage errors
+      }
+
+      // Persist to Firestore document so any device / reload reuses the exact Transaction ID
+      if (invoice.id) {
+        try {
+          await updateDoc(doc(db, 'invoices', invoice.id), {
+            qrisData: {
+              transactionId: data.transactionId,
+              qrisContent: data.qrisContent || '',
+              qrImageUrl: data.qrImageUrl || '',
+              merchantName: data.merchantName || fallbackMerchantName,
+              nmid: data.nmid || fallbackNmid,
+              amount: invoice.total,
+              expiresAt: data.expiresAt || new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+              createdAt: new Date().toISOString(),
+              mode: data.mode || 'EXTERNAL_PROXY'
+            }
+          });
+        } catch (e) {
+          console.warn("Could not save qrisData directly to Firestore (fallback to server cache):", e);
+        }
+      }
     } catch (err) {
       console.warn('Gagal fetch QRIS dari server:', err);
       const errMsg = err instanceof Error ? err.message : 'Gagal menghasilkan QRIS dari server';
@@ -176,7 +272,7 @@ export const PublicPaymentSelector: React.FC<PublicPaymentSelectorProps> = ({ in
       inFlightRef.current = false;
       setIsLoadingQris(false);
     }
-  }, [invoice.id, invoice.total, invoice.status, invoice.clientName, client?.name, fallbackMerchantName, fallbackNmid, settings.qrisConfig?.apiEndpoint, settings.qrisConfig?.secretApiKey, settings.qrisConfig?.webhookUrl]);
+  }, [invoice.id, invoice.total, invoice.status, invoice.clientName, invoice.qrisData, client?.name, fallbackMerchantName, fallbackNmid, settings.qrisConfig?.apiEndpoint, settings.qrisConfig?.secretApiKey, settings.qrisConfig?.webhookUrl]);
 
   // Initial trigger when QRIS method is active
   useEffect(() => {
@@ -467,7 +563,7 @@ export const PublicPaymentSelector: React.FC<PublicPaymentSelectorProps> = ({ in
 
               <button
                 type="button"
-                onClick={fetchQrisFromServer}
+                onClick={() => fetchQrisFromServer(true)}
                 disabled={isLoadingQris}
                 className="flex items-center gap-1 text-[11px] text-app-primary hover:underline font-bold disabled:opacity-50"
               >
@@ -556,7 +652,7 @@ export const PublicPaymentSelector: React.FC<PublicPaymentSelectorProps> = ({ in
                     {timeLeft <= 0 && (
                       <button
                         type="button"
-                        onClick={fetchQrisFromServer}
+                        onClick={() => fetchQrisFromServer(true)}
                         className="text-app-primary text-xs font-bold underline ml-1"
                       >
                         Perbarui

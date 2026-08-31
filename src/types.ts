@@ -28,6 +28,18 @@ export interface InvoiceItem {
   qty: number;
 }
 
+export interface InvoiceQrisData {
+  transactionId?: string;
+  qrisContent?: string;
+  qrImageUrl?: string;
+  merchantName?: string;
+  nmid?: string;
+  expiresAt?: string;
+  createdAt?: string;
+  amount?: number;
+  mode?: 'INTERNAL_LOCAL' | 'EXTERNAL_PROXY';
+}
+
 export interface Invoice {
   id: string;
   clientId: string;
@@ -43,6 +55,7 @@ export interface Invoice {
   discountAmount?: number;
   paidAt?: string;
   paymentMethod?: string;
+  qrisData?: InvoiceQrisData;
 }
 
 export interface Voucher {

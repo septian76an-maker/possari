@@ -2,26 +2,35 @@ import express from "express";
 import path from "path";
 import { Resend } from 'resend';
 import dotenv from 'dotenv';
-import * as admin from 'firebase-admin';
+import { initializeApp, cert, getApps, App } from 'firebase-admin/app';
+import { getFirestore, Firestore } from 'firebase-admin/firestore';
 
 dotenv.config();
 
+let firebaseAdminApp: App | null = null;
+let adminDb: Firestore | null = null;
+
 // Initialize Firebase Admin securely from Environment Variable
 try {
-  if (!admin.apps.length) {
+  if (!getApps().length) {
     if (process.env.FIREBASE_SERVICE_ACCOUNT) {
       const serviceAccount = JSON.parse(Buffer.from(process.env.FIREBASE_SERVICE_ACCOUNT, 'base64').toString('utf-8'));
-      admin.initializeApp({
-        credential: admin.credential.cert(serviceAccount)
+      firebaseAdminApp = initializeApp({
+        credential: cert(serviceAccount)
       });
+      adminDb = getFirestore(firebaseAdminApp);
       console.log("[Firebase Admin] Initialized successfully via Base64 ENV");
     } else {
       // Fallback to application default credentials (works on GCP Cloud Run/App Engine)
-      admin.initializeApp({
+      firebaseAdminApp = initializeApp({
         projectId: 'ai-studio-d9d4575e-7171-4bb8-b126-d142a9ba502c'
       });
+      adminDb = getFirestore(firebaseAdminApp);
       console.log("[Firebase Admin] Initialized with Default Credentials / Project ID");
     }
+  } else {
+    firebaseAdminApp = getApps()[0];
+    adminDb = getFirestore(firebaseAdminApp);
   }
 } catch (error) {
   console.warn("[Firebase Admin] Failed to initialize. Firestore webhook updates will fallback to memory only.", error);
@@ -376,9 +385,27 @@ function extractQrisDetailsFromObject(obj: any): {
   return result;
 }
 
+// In-memory store for active QRIS transactions (prevents duplicate generations on gateway)
+interface CachedQrisSession {
+  invoiceId: string;
+  amount: number;
+  transactionId: string;
+  qrisContent?: string;
+  qrImageUrl?: string;
+  merchantName?: string;
+  nmid?: string;
+  expiresAt: string;
+  createdAt: string;
+  mode: string;
+  endpointUsed: string;
+  response?: any;
+}
+
+const activeQrisSessions = new Map<string, CachedQrisSession>();
+
 // 0. Proxy Endpoint: POST /api/qris/proxy-generate (Bypasses CORS for external API URLs)
 app.post("/api/qris/proxy-generate", async (req, res) => {
-  const { apiEndpoint, secretApiKey, payload } = req.body;
+  const { apiEndpoint, secretApiKey, payload, forceRefresh } = req.body;
   const targetEndpoint = (apiEndpoint || '').trim();
   const port = Number(process.env.PORT) || 3000;
   const isLocal = !targetEndpoint || 
@@ -398,6 +425,80 @@ app.post("/api/qris/proxy-generate", async (req, res) => {
       success: false,
       error: "Invalid amount. Field 'amount' must be a positive number."
     });
+  }
+
+  // Check if an active session already exists for this invoice (unless forceRefresh requested)
+  if (!forceRefresh) {
+    // 1. Check in-memory map
+    const cached = activeQrisSessions.get(invoiceNumber);
+    if (cached && cached.amount === numericAmount) {
+      const remainingMs = new Date(cached.expiresAt).getTime() - Date.now();
+      if (remainingMs > 30000) { // More than 30s remaining
+        console.log(`[Proxy QRIS] Reusing active in-memory QRIS session for Invoice #${invoiceNumber} (TxId: ${cached.transactionId})`);
+        return res.json({
+          success: true,
+          mode: cached.mode || "EXTERNAL_PROXY",
+          endpointUsed: cached.endpointUsed || targetEndpoint,
+          qrisContent: cached.qrisContent,
+          qrImageUrl: cached.qrImageUrl,
+          transactionId: cached.transactionId,
+          merchantName: cached.merchantName || targetMerchant,
+          nmid: cached.nmid || targetNmid,
+          amount: cached.amount,
+          expiresAt: cached.expiresAt,
+          isReused: true,
+          response: cached.response,
+          message: "Menggunakan data QRIS aktif yang sudah ada (tidak membuat transaksi baru)."
+        });
+      }
+    }
+
+    // 2. Check Firestore if admin is initialized
+    if (adminDb) {
+      try {
+        const invDoc = await adminDb.collection('invoices').doc(invoiceNumber).get();
+        if (invDoc.exists) {
+          const invData = invDoc.data();
+          const qrisData = invData?.qrisData;
+          if (qrisData && (qrisData.amount === numericAmount || !qrisData.amount) && (qrisData.qrisContent || qrisData.qrImageUrl)) {
+            const expiresTime = qrisData.expiresAt ? new Date(qrisData.expiresAt).getTime() : (Date.now() + 15 * 60 * 1000);
+            if (expiresTime > Date.now() + 30000) {
+              const sessionObj: CachedQrisSession = {
+                invoiceId: invoiceNumber,
+                amount: numericAmount,
+                transactionId: qrisData.transactionId || `TX-${invoiceNumber}`,
+                qrisContent: qrisData.qrisContent,
+                qrImageUrl: qrisData.qrImageUrl,
+                merchantName: qrisData.merchantName || targetMerchant,
+                nmid: qrisData.nmid || targetNmid,
+                expiresAt: qrisData.expiresAt || new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+                createdAt: qrisData.createdAt || new Date().toISOString(),
+                mode: qrisData.mode || "EXTERNAL_PROXY",
+                endpointUsed: targetEndpoint
+              };
+              activeQrisSessions.set(invoiceNumber, sessionObj);
+              console.log(`[Proxy QRIS] Loaded & Reusing active QRIS from Firestore for Invoice #${invoiceNumber} (TxId: ${sessionObj.transactionId})`);
+              return res.json({
+                success: true,
+                mode: sessionObj.mode,
+                endpointUsed: targetEndpoint,
+                qrisContent: sessionObj.qrisContent,
+                qrImageUrl: sessionObj.qrImageUrl,
+                transactionId: sessionObj.transactionId,
+                merchantName: sessionObj.merchantName,
+                nmid: sessionObj.nmid,
+                amount: numericAmount,
+                expiresAt: sessionObj.expiresAt,
+                isReused: true,
+                message: "Menggunakan data QRIS aktif dari database (tidak membuat transaksi baru)."
+              });
+            }
+          }
+        }
+      } catch (err) {
+        console.warn(`[Proxy QRIS] Error reading Firestore cache for #${invoiceNumber}:`, err);
+      }
+    }
   }
 
   // If local endpoint or default relative path
@@ -587,6 +688,46 @@ app.post("/api/qris/proxy-generate", async (req, res) => {
       });
     }
 
+    const finalExpiresAt = extractedExpiresAt || new Date(Date.now() + 30 * 60 * 1000).toISOString();
+
+    // Cache the active session so reopening invoice won't duplicate QRIS on external server
+    if (externalResponse.ok && (extractedQrisContent || extractedQrImage)) {
+      const sessionToCache: CachedQrisSession = {
+        invoiceId: invoiceNumber,
+        amount: numericAmount,
+        transactionId: extractedTxId,
+        qrisContent: extractedQrisContent,
+        qrImageUrl: extractedQrImage,
+        merchantName: extractedMerchant,
+        nmid: extractedNmid,
+        expiresAt: finalExpiresAt,
+        createdAt: new Date().toISOString(),
+        mode: "EXTERNAL_PROXY",
+        endpointUsed: fullUrl,
+        response: responseData
+      };
+      activeQrisSessions.set(invoiceNumber, sessionToCache);
+
+      // Async persist to Firestore if available
+      if (adminDb) {
+        adminDb.collection('invoices').doc(invoiceNumber).set({
+          qrisData: {
+            transactionId: extractedTxId,
+            qrisContent: extractedQrisContent || '',
+            qrImageUrl: extractedQrImage || '',
+            merchantName: extractedMerchant || targetMerchant,
+            nmid: extractedNmid || targetNmid,
+            amount: numericAmount,
+            expiresAt: finalExpiresAt,
+            createdAt: new Date().toISOString(),
+            mode: "EXTERNAL_PROXY"
+          }
+        }, { merge: true }).catch(err => {
+          console.warn(`[Proxy QRIS] Firestore set qrisData error:`, err);
+        });
+      }
+    }
+
     return res.json({
       success: externalResponse.ok,
       mode: "EXTERNAL_PROXY",
@@ -600,7 +741,7 @@ app.post("/api/qris/proxy-generate", async (req, res) => {
       merchantName: extractedMerchant,
       nmid: extractedNmid,
       amount: numericAmount,
-      expiresAt: extractedExpiresAt,
+      expiresAt: finalExpiresAt,
       response: responseData,
       rawBody: typeof responseData === 'object' ? responseData : responseText
     });
@@ -821,11 +962,10 @@ app.post("/api/qris/payment-callback", async (req, res) => {
 
     // Attempt to update Firestore directly via Admin SDK
     try {
-      if (admin.apps.length > 0) {
+      if (adminDb) {
         if (record.invoiceId) {
-          const db = admin.firestore();
           console.log(`[QRIS Webhook] Attempting Firestore update for doc: ${record.invoiceId}`);
-          await db.collection('invoices').doc(record.invoiceId).update({
+          await adminDb.collection('invoices').doc(record.invoiceId).update({
             status: 'paid',
             paidAt: record.paidAt,
             paymentMethod: record.paymentSource || 'QRIS Dinamis'
@@ -915,9 +1055,8 @@ app.get("/api/qris/payment-status/:invoiceId", async (req, res) => {
   if (record) {
     // FORCE UPDATE TO FIRESTORE DIRECTLY
     try {
-      if (admin.apps.length > 0) {
-        const db = admin.firestore();
-        await db.collection('invoices').doc(invoiceId).update({
+      if (adminDb) {
+        await adminDb.collection('invoices').doc(invoiceId).update({
           status: 'paid',
           paidAt: record.paidAt || new Date().toISOString(),
           paymentMethod: record.paymentSource || 'QRIS Dinamis'

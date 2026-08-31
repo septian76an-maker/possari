@@ -127,7 +127,9 @@ service cloud.firestore {
       // Public read for specific invoice (for public invoice feature)
       allow get: if true; 
       allow list: if isAuthenticated();
-      allow create, update: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated() || 
+                      (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['qrisData', 'status', 'paidAt', 'paymentMethod']));
       allow delete: if isAdmin();
     }
 

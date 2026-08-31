@@ -62,7 +62,10 @@
         "createdBy": { "type": "string" },
         "creatorName": { "type": "string" },
         "voucherCode": { "type": "string" },
-        "discountAmount": { "type": "number" }
+        "discountAmount": { "type": "number" },
+        "paidAt": { "type": "string", "format": "date-time" },
+        "paymentMethod": { "type": "string" },
+        "qrisData": { "type": "object" }
       },
       "required": ["clientId", "items", "total", "status", "type", "createdAt"]
     },
