@@ -131,16 +131,24 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
 
   return (
     <div className="min-h-screen bg-app-bg flex text-app-text">
+      {/* Mobile Backdrop */}
+      {isSidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-40 lg:hidden backdrop-blur-xs transition-opacity"
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
+
       {/* Sidebar */}
       <aside className={cn(
-        "fixed inset-y-0 left-0 w-64 bg-app-card border-r border-app-border z-50 transition-transform lg:translate-x-0 lg:static lg:block",
+        "fixed inset-y-0 left-0 w-64 bg-app-card border-r border-app-border z-50 transition-transform lg:translate-x-0 lg:sticky lg:top-0 lg:h-screen lg:shrink-0 flex flex-col",
         !isSidebarOpen && "-translate-x-full"
       )}>
-        <div className="h-full flex flex-col">
-          <div className="p-6 border-b border-app-border/50">
+        <div className="h-full flex flex-col min-h-0">
+          <div className="p-6 border-b border-app-border/50 shrink-0">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="w-8 h-8 bg-app-primary rounded-lg flex items-center justify-center overflow-hidden">
+                <div className="w-8 h-8 bg-app-primary rounded-lg flex items-center justify-center overflow-hidden shrink-0">
                   {settings.appLogo ? (
                     <img src={settings.appLogo} alt="Logo" className="w-full h-full object-contain" referrerPolicy="no-referrer" />
                   ) : (
@@ -149,13 +157,13 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
                 </div>
                 <h1 className="text-xl font-bold text-app-text tracking-tight truncate max-w-[120px]">{settings.appName}</h1>
               </div>
-              <button className="lg:hidden text-app-text" onClick={() => setIsSidebarOpen(false)}>
+              <button className="lg:hidden text-app-text p-1 hover:bg-app-bg rounded-lg" onClick={() => setIsSidebarOpen(false)}>
                 <X size={20} />
               </button>
             </div>
           </div>
 
-          <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
+          <nav className="flex-1 p-4 space-y-1 overflow-y-auto min-h-0">
             {menuItems.map((item) => {
               const Icon = item.icon;
               const hasSubItems = 'subItems' in item && item.subItems;
@@ -225,23 +233,28 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
             })}
           </nav>
 
-          <div className="p-4 border-t border-app-border/50">
-            <div className="flex items-center gap-3 px-4 py-3 mb-2">
-              <div className="w-8 h-8 rounded-full bg-app-bg flex items-center justify-center text-app-text-muted">
-                <User size={16} />
+          {/* Static User Info & Logout Card at Bottom Left */}
+          <div className="p-3.5 border-t border-app-border/60 shrink-0 bg-app-card mt-auto sticky bottom-0 z-10">
+            <div className="bg-app-bg/70 border border-app-border/70 rounded-xl p-3 shadow-xs space-y-2.5">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-full bg-app-primary/10 border border-app-primary/20 flex items-center justify-center text-app-primary font-bold shrink-0">
+                  {profile?.name ? profile.name.charAt(0).toUpperCase() : <User size={16} />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold text-app-text truncate leading-tight">{profile?.name || 'Pengguna'}</p>
+                  <span className="inline-block text-[10px] font-semibold text-app-text-muted uppercase tracking-wider bg-app-card px-1.5 py-0.5 rounded border border-app-border/50 mt-0.5">
+                    {profile?.role || 'Staff'}
+                  </span>
+                </div>
               </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-app-text truncate">{profile?.name}</p>
-                <p className="text-xs text-app-text-muted capitalize">{profile?.role}</p>
-              </div>
+              <button
+                onClick={handleLogout}
+                className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-bold text-red-500 hover:text-white hover:bg-red-500 border border-red-500/20 hover:border-red-500 transition-all shadow-xs"
+              >
+                <LogOut size={15} />
+                Keluar
+              </button>
             </div>
-            <button
-              onClick={handleLogout}
-              className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium text-red-500 hover:bg-red-500/10 transition-colors"
-            >
-              <LogOut size={18} />
-              Keluar
-            </button>
           </div>
         </div>
       </aside>

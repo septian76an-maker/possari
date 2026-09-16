@@ -37,7 +37,8 @@ const defaultSettings: AppSettings = {
   },
   footerNote: 'Terima kasih atas kepercayaan Anda.',
   quotationBeforeTable: 'Bersama ini kami kirimkan penawaran harga untuk jasa/produk sebagai berikut:',
-  quotationAfterTable: 'Penawaran ini berlaku selama 14 hari sejak tanggal diterbitkan. Demikian penawaran ini kami sampaikan, atas perhatiannya kami ucapkan terima kasih.'
+  quotationAfterTable: 'Penawaran ini berlaku selama 14 hari sejak tanggal diterbitkan. Demikian penawaran ini kami sampaikan, atas perhatiannya kami ucapkan terima kasih.',
+  clientsApiKey: 'rahasia_api_key_anda'
 };
 
 const SettingsContext = createContext<SettingsContextType>({

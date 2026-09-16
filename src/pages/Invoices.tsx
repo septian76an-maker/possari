@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { db, collection, onSnapshot, query, addDoc, deleteDoc, doc, updateDoc, handleFirestoreError, OperationType, getDocs, where, limit } from '../firebase';
 import { Invoice, Client, Service, InvoiceItem, Voucher } from '../types';
-import { Plus, Minus, Search, Trash2, FileText, X, Printer, Send, ExternalLink, CheckCircle2, Clock, Filter, Calendar, AlertTriangle, Loader2, Mail, ChevronDown, Tag, Check, Download } from 'lucide-react';
+import { Plus, Minus, Search, Trash2, FileText, X, Printer, Send, ExternalLink, CheckCircle2, Clock, Filter, Calendar, AlertTriangle, Loader2, Mail, ChevronDown, Tag, Check, Download, ChevronLeft, ChevronRight } from 'lucide-react';
 import html2pdf from 'html2pdf.js';
 import { useAuth } from '../AuthContext';
 import { useSettings } from '../SettingsContext';
@@ -35,6 +35,15 @@ export const Invoices: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'invoice' | 'quotation'>('all');
   const [filterDate, setFilterDate] = useState('');
+
+  // Pagination State (10 data terakhir per halaman)
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
+
+  // Reset page to 1 whenever filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, filterType, filterDate]);
 
   // Form State
   const [type, setType] = useState<'invoice' | 'quotation'>('invoice');
@@ -444,6 +453,13 @@ export const Invoices: React.FC = () => {
     })
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
+  // Pagination calculation (10 data per halaman)
+  const totalPages = Math.max(1, Math.ceil(filteredInvoices.length / itemsPerPage));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const startIndex = (safeCurrentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedInvoices = filteredInvoices.slice(startIndex, endIndex);
+
   return (
     <div className="space-y-8">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -509,7 +525,7 @@ export const Invoices: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 gap-6">
-        {filteredInvoices.map(invoice => (
+        {paginatedInvoices.map(invoice => (
           <div key={invoice.id} className="bg-app-card rounded-2xl border border-app-border p-6 flex flex-col md:flex-row md:items-center justify-between gap-6 hover:shadow-lg transition-all">
             <div className="flex items-center gap-4">
               <div className={clsx(
@@ -579,6 +595,69 @@ export const Invoices: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Pagination Controls */}
+      {filteredInvoices.length > 0 && (
+        <div className="bg-app-card rounded-2xl border border-app-border p-4 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm">
+          <div className="text-xs text-app-text-muted font-medium text-center sm:text-left">
+            Menampilkan <span className="font-bold text-app-text">{startIndex + 1}</span> - <span className="font-bold text-app-text">{Math.min(endIndex, filteredInvoices.length)}</span> dari <span className="font-bold text-app-text">{filteredInvoices.length}</span> dokumen <span className="hidden sm:inline">(10 per halaman)</span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                setCurrentPage(prev => Math.max(prev - 1, 1));
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+              disabled={safeCurrentPage <= 1}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold border border-app-border bg-app-bg text-app-text hover:bg-app-card disabled:opacity-30 disabled:cursor-not-allowed transition-all shadow-xs active:scale-95"
+            >
+              <ChevronLeft size={16} />
+              <span>Sebelumnya</span>
+            </button>
+
+            <div className="flex items-center gap-1 px-1">
+              {Array.from({ length: totalPages }, (_, i) => i + 1)
+                .filter(p => p === 1 || p === totalPages || Math.abs(p - safeCurrentPage) <= 1)
+                .map((p, idx, arr) => {
+                  const prevPage = arr[idx - 1];
+                  const hasGap = prevPage && p - prevPage > 1;
+                  return (
+                    <React.Fragment key={p}>
+                      {hasGap && <span className="text-xs text-app-text-muted px-1">...</span>}
+                      <button
+                        onClick={() => {
+                          setCurrentPage(p);
+                          window.scrollTo({ top: 0, behavior: 'smooth' });
+                        }}
+                        className={clsx(
+                          "w-8 h-8 rounded-lg text-xs font-bold transition-all",
+                          safeCurrentPage === p
+                            ? "bg-app-primary text-white shadow-xs"
+                            : "text-app-text-muted hover:bg-app-bg hover:text-app-text"
+                        )}
+                      >
+                        {p}
+                      </button>
+                    </React.Fragment>
+                  );
+                })}
+            </div>
+
+            <button
+              onClick={() => {
+                setCurrentPage(prev => Math.min(prev + 1, totalPages));
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+              disabled={safeCurrentPage >= totalPages}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold border border-app-border bg-app-bg text-app-text hover:bg-app-card disabled:opacity-30 disabled:cursor-not-allowed transition-all shadow-xs active:scale-95"
+            >
+              <span>Selanjutnya</span>
+              <ChevronRight size={16} />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Delete Confirmation Modal */}
       {isDeleteModalOpen && (

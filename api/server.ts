@@ -1,9 +1,13 @@
 import express from "express";
 import path from "path";
+import fs from "fs";
+import cors from "cors";
 import { Resend } from 'resend';
 import dotenv from 'dotenv';
 import { initializeApp, cert, getApps, App } from 'firebase-admin/app';
 import { getFirestore, Firestore } from 'firebase-admin/firestore';
+import { initializeApp as initClientApp, getApps as getClientApps } from 'firebase/app';
+import { getFirestore as getClientFirestore, collection, getDocs, Firestore as ClientFirestore } from 'firebase/firestore';
 
 dotenv.config();
 
@@ -48,6 +52,151 @@ app.all(["/api/health", "/health", "/api/ping", "/ping"], (req, res) => {
     timestamp: new Date().toISOString(),
     message: "Server is healthy and warm!"
   });
+});
+
+// =========================================================================
+// Clients API Endpoint (/api/klien) with CORS & API Key Authentication
+// =========================================================================
+let clientFirestoreDb: ClientFirestore | null = null;
+
+function getClientFirestoreDb(): ClientFirestore | null {
+  if (clientFirestoreDb) return clientFirestoreDb;
+  try {
+    const configPath = path.resolve(process.cwd(), 'firebase-applet-config.json');
+    if (fs.existsSync(configPath)) {
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      const app = getClientApps().length ? getClientApps()[0] : initClientApp(config, 'ServerClientReader');
+      clientFirestoreDb = getClientFirestore(app, config.firestoreDatabaseId);
+      return clientFirestoreDb;
+    }
+  } catch (err) {
+    console.warn('[ClientFirestore] Failed to init fallback client Firestore:', err);
+  }
+  return null;
+}
+
+interface StandardClientResponse {
+  id: string;
+  nama: string;
+  telepon: string;
+  email: string;
+  alamat: string;
+}
+
+async function fetchAllClients(): Promise<StandardClientResponse[]> {
+  // 1. Try Firebase Admin if available
+  if (adminDb) {
+    try {
+      const snapshot = await adminDb.collection('clients').get();
+      if (snapshot && snapshot.docs && snapshot.docs.length > 0) {
+        return snapshot.docs.map(doc => {
+          const d = doc.data() || {};
+          return {
+            id: doc.id,
+            nama: String(d.name || d.nama || ''),
+            telepon: String(d.phone || d.telepon || ''),
+            email: String(d.email || ''),
+            alamat: String(d.address || d.alamat || '')
+          };
+        });
+      }
+    } catch (adminErr) {
+      console.warn('[Clients API] adminDb fetch failed, attempting client SDK fallback:', adminErr);
+    }
+  }
+
+  // 2. Fallback to Firebase Client SDK
+  const clientDb = getClientFirestoreDb();
+  if (clientDb) {
+    try {
+      const snapshot = await getDocs(collection(clientDb, 'clients'));
+      return snapshot.docs.map(doc => {
+        const d = doc.data() || {};
+        return {
+          id: doc.id,
+          nama: String(d.name || d.nama || ''),
+          telepon: String(d.phone || d.telepon || ''),
+          email: String(d.email || ''),
+          alamat: String(d.address || d.alamat || '')
+        };
+      });
+    } catch (clientErr) {
+      console.error('[Clients API] Client SDK fetch failed:', clientErr);
+    }
+  }
+
+  return [];
+}
+
+const klienCorsMiddleware = cors({
+  origin: '*',
+  methods: ['GET', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key', 'x-api-key']
+});
+
+const applyKlienCorsHeaders = (res: express.Response) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-API-Key, x-api-key');
+};
+
+app.options(['/api/klien', '/api/clients'], klienCorsMiddleware, (req, res) => {
+  applyKlienCorsHeaders(res);
+  return res.status(204).end();
+});
+
+app.get(['/api/klien', '/api/clients'], klienCorsMiddleware, async (req, res) => {
+  applyKlienCorsHeaders(res);
+
+  // Authentication via API Key or Bearer Token
+  const configuredApiKey = (process.env.CLIENTS_API_KEY || process.env.API_KEY || '').trim();
+  const authHeader = req.headers.authorization;
+  const xApiKey = req.headers['x-api-key'] || req.headers['x-apikey'];
+  const queryKey = req.query.apiKey || req.query.api_key;
+
+  let providedKey = '';
+  if (typeof xApiKey === 'string') {
+    providedKey = xApiKey.trim();
+  } else if (Array.isArray(xApiKey) && typeof xApiKey[0] === 'string') {
+    providedKey = xApiKey[0].trim();
+  } else if (typeof authHeader === 'string' && authHeader.toLowerCase().startsWith('bearer ')) {
+    providedKey = authHeader.substring(7).trim();
+  } else if (typeof queryKey === 'string') {
+    providedKey = queryKey.trim();
+  }
+
+  if (!providedKey) {
+    return res.status(401).json({
+      error: "Unauthorized",
+      message: "API Key diperlukan untuk mengakses data pelanggan. Sertakan header 'X-API-Key: <kunci_rahasia>' atau 'Authorization: Bearer <kunci_rahasia>'."
+    });
+  }
+
+  // Validate API key against configured key or default fallback key
+  const validKeys = [
+    configuredApiKey,
+    'rahasia_api_key_anda' // default fallback key
+  ].filter(Boolean);
+
+  const isValid = validKeys.includes(providedKey);
+
+  if (!isValid) {
+    return res.status(403).json({
+      error: "Forbidden",
+      message: "API Key yang Anda masukkan tidak valid."
+    });
+  }
+
+  try {
+    const clients = await fetchAllClients();
+    return res.status(200).json(clients);
+  } catch (err: any) {
+    console.error('[Clients API] Error handling request:', err);
+    return res.status(500).json({
+      error: "Internal Server Error",
+      message: "Gagal mengambil data pelanggan: " + (err.message || String(err))
+    });
+  }
 });
 
 // Lazy initialization for Resend

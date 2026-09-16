@@ -128,4 +128,5 @@ export interface AppSettings {
   footerNote?: string;
   quotationBeforeTable?: string;
   quotationAfterTable?: string;
+  clientsApiKey?: string;
 }
